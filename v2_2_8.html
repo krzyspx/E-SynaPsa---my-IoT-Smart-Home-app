@@ -1,0 +1,3754 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP32-C3 WebSocket Multi-Terminal</title>
+  <style>
+    :root {
+      --bg-color: #000000;
+      --term-green: #00ff00;
+      --term-green-glow: rgba(0, 255, 0, 0.4);
+      --term-red: #ff0055;
+      --term-red-glow: rgba(255, 0, 85, 0.4);
+      --term-cyan: #00ffff;
+      --term-yellow: #ffff00;
+      --term-dim: #1e1e1e;
+      
+      /* Kolory dla Kart */
+      --co-low: #33b5ff;
+      --co-high: #ff7825;
+      --lbl-yellow: #ffcc00;
+      --btn-orange: #ffa048;
+      --box-lightblue: #70d0ff;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--term-green);
+      font-family: 'Courier New', Courier, monospace;
+      padding: 20px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Wyłączenie przechwytywania kliknięć przez tekst i ikony wewnątrz przycisków */
+    .tab-btn *, .btn *, .j-btn *, .btn-reset-circle *, .btn-adj *, .btn-co-mode *, .btn-heat *, .j-sub-btn *, .card-test-btn *, .s-sub-btn * {
+      pointer-events: none;
+    }
+
+    /* Nagłówek Górny */
+    #header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 15px;
+    }
+
+    .header-info {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      font-size: 1.1rem;
+      font-weight: bold;
+      letter-spacing: 1px;
+    }
+
+    .header-info .static-txt {
+      color: var(--term-green);
+    }
+
+    .header-info .dynamic-url {
+      color: var(--term-cyan);
+    }
+
+    /* Przyciski-Wskaźniki Kart (P, J, S, L, C, K, T) */
+    #nav-buttons {
+      display: flex;
+      gap: 12px;
+    }
+
+    .tab-btn {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      font-weight: bold;
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;
+      transition: all 0.25s ease;
+      border: 2px solid transparent;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    .v0-dark {
+      background: radial-gradient(circle at 35% 35%, #0033cc, #001155);
+      color: #ffffff;
+      box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.6);
+    }
+
+    .v0-light {
+      background: radial-gradient(circle at 35% 35%, #80e5ff 0%, #00aaff 50%, #0055cc 100%);
+      color: #000000;
+      box-shadow: 0 0 20px #00aaff, 0 0 35px rgba(0, 170, 255, 0.7);
+    }
+
+    .tab-btn.active-tab {
+      border-color: var(--term-green);
+      box-shadow: 0 0 12px var(--term-green);
+    }
+
+    #main-container {
+      display: flex;
+      flex: 1;
+      gap: 10px;
+      min-height: 0;
+    }
+
+    #terminal-section {
+      width: 220px;
+      min-width: 60px; /* Zmniejszona minimalna szerokość dla ukrytego terminala */
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      transition: width 0.3s ease; /* Płynne zwijanie */
+    }
+    
+    #terminal-section.hidden {
+      width: 60px;
+    }
+
+    /* Pasek kontrolny terminala */
+    .term-toolbar {
+      display: flex;
+      align-items: flex-end; /* Wyrównanie do dołu */
+      gap: 12px;
+      margin-bottom: 10px;
+      user-select: none;
+    }
+
+    .checkbox-container {
+      display: flex;
+      flex-direction: column; /* Napis nad kwadracikiem */
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      color: var(--term-green);
+      font-size: 0.75rem;
+      font-weight: bold;
+      font-family: 'Courier New', Courier, monospace;
+    }
+
+    .checkbox-container input {
+      display: none;
+    }
+
+    .custom-box {
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--term-green);
+      background: #000;
+      display: inline-block;
+      position: relative;
+    }
+
+    .checkbox-container input:checked + .custom-box {
+      background-color: var(--term-green);
+      box-shadow: 0 0 8px var(--term-green-glow);
+    }
+
+    .btn-clear-term {
+      background: transparent;
+      border: none;
+      color: var(--term-green);
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.75rem; /* Zmniejszona czcionka pasująca do checkboxów */
+      font-weight: bold;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column; /* Napis nad kropką */
+      align-items: center;
+      gap: 4px;
+      padding: 0;
+      outline: none;
+      letter-spacing: 1px;
+    }
+
+    .btn-clear-term:hover {
+      text-shadow: 0 0 8px var(--term-green);
+    }
+
+    .green-dot {
+      width: 18px; /* Taki sam rozmiar jak kwadraciki checkboxów */
+      height: 18px;
+      background-color: transparent;
+      border: 2px solid var(--term-green);
+      border-radius: 50%;
+      display: inline-block;
+      transition: all 0.1s ease;
+    }
+
+    .btn-clear-term:active .green-dot {
+       background-color: var(--term-green);
+       box-shadow: 0 0 8px var(--term-green);
+    }
+
+    #terminal {
+      flex: 1;
+      background: #000;
+      border: 1px solid var(--term-green);
+      border-radius: 3px;
+      padding: 12px;
+      overflow-y: auto;
+      font-size: 0.9rem;
+      line-height: 1.45;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      white-space: pre-wrap;
+    }
+
+    #inputline {
+      width: 100%;
+      background: #000;
+      color: var(--term-green);
+      border: 1px solid var(--term-green);
+      border-radius: 3px;
+      outline: none;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.95rem;
+      padding: 12px;
+      margin-top: 12px;
+    }
+
+    #inputline::placeholder {
+      color: #555;
+    }
+
+    #control-panel {
+      flex: 1;
+      background: #000;
+      border: 1px solid var(--term-dim);
+      border-radius: 3px;
+      padding: 15px;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Przycisk Pełnego Ekranu */
+    .btn-fullscreen {
+      position: absolute;
+      top: 18px;
+      right: 18px;
+      background: transparent;
+      border: 1px solid var(--term-green);
+      color: var(--term-green);
+      width: 38px;
+      height: 38px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+      outline: none;
+      z-index: 10;
+    }
+
+    .btn-fullscreen:hover {
+      background: rgba(0, 255, 0, 0.15);
+      box-shadow: 0 0 12px var(--term-green-glow);
+    }
+
+    .btn-fullscreen svg {
+      width: 20px;
+      height: 20px;
+      fill: currentColor;
+    }
+
+    /* Uniwersalny Widget TEST */
+    .card-test-widget {
+      position: absolute;
+      top: 15px;
+      right: 68px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: #0d0d0d;
+      border: 1px solid #333;
+      padding: 6px 14px;
+      border-radius: 12px;
+      z-index: 9;
+    }
+
+    .card-test-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .card-test-btn {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 0.85rem;
+      font-weight: bold;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      outline: none;
+      border: 2px solid transparent;
+      user-select: none;
+      transition: all 0.2s ease;
+    }
+
+    .code-side-txt {
+      font-size: 0.75rem;
+      color: #888;
+      font-family: 'Courier New', Courier, monospace;
+      letter-spacing: 0.5px;
+      max-width: 80px;
+      text-align: center;
+      word-break: break-all;
+    }
+
+    .panel-body {
+      display: flex;
+      flex: 1;
+      gap: 40px;
+      align-items: center;
+      justify-content: space-around;
+    }
+
+    /* Układ panelu POMPA - z dodanym odstępem od góry dla widgetu TEST */
+    .pompa-panel-custom {
+      padding-top: 35px !important;
+    }
+
+    .panel-left {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .led-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .led-indicator {
+      width: 65px;
+      height: 65px;
+      border-radius: 50%;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .led-indicator.off {
+      background: radial-gradient(circle at 35% 35%, #444, #111);
+      border: 1px solid #222;
+      box-shadow: inset 0 0 5px #000;
+    }
+
+    @keyframes ledGlowPulse {
+      0% { box-shadow: 0 0 15px #00ff00, 0 0 30px rgba(0, 255, 0, 0.5); }
+      50% { box-shadow: 0 0 35px #00ff00, 0 0 65px rgba(0, 255, 0, 0.9); }
+      100% { box-shadow: 0 0 15px #00ff00, 0 0 30px rgba(0, 255, 0, 0.5); }
+    }
+
+    .led-indicator.state-on {
+      background: radial-gradient(circle at 35% 35%, #c8ffc8 0%, #00ff00 55%, #00aa00 100%);
+      animation: ledGlowPulse 1.5s infinite ease-in-out;
+    }
+
+    .led-indicator.state-off {
+      background: radial-gradient(circle at 35% 35%, #ffc8d8 0%, #ff0055 55%, #aa0033 100%);
+      box-shadow: 0 0 25px #ff0055, 0 0 45px rgba(255, 0, 85, 0.6);
+    }
+
+    @keyframes spinRotor {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    .rotor-icon {
+      width: 34px;
+      height: 34px;
+      fill: #000;
+      opacity: 0.8;
+      display: none;
+    }
+
+    .led-indicator.state-on .rotor-icon {
+      display: block;
+      animation: spinRotor 1s linear infinite;
+    }
+
+    .led-label {
+      font-size: 0.85rem;
+      color: var(--term-green);
+      font-weight: bold;
+      letter-spacing: 1px;
+    }
+
+    .btn-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      width: 170px;
+    }
+
+    .btn {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.95rem;
+      font-weight: bold;
+      padding: 12px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      background: #000;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      outline: none;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .btn-on {
+      color: var(--term-green);
+      border: 2px solid var(--term-green);
+    }
+
+    .btn-on:hover {
+      background: rgba(0, 255, 0, 0.1);
+      box-shadow: 0 0 15px rgba(0, 255, 0, 0.3);
+    }
+
+    .btn-off {
+      color: var(--term-red);
+      border: 2px solid var(--term-red);
+    }
+
+    .btn-off:hover {
+      background: rgba(255, 0, 85, 0.1);
+      box-shadow: 0 0 15px rgba(255, 0, 85, 0.3);
+    }
+
+    .panel-right {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .value-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 160px);
+      gap: 20px 25px;
+    }
+
+    .val-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .val-label {
+      color: #ffffff;
+      font-size: 1.3rem;
+      font-weight: bold;
+      font-family: Arial, Helvetica, sans-serif;
+      letter-spacing: 1px;
+    }
+
+    .val-box {
+      width: 100%;
+      height: 55px; /* Ustawiona nowa wysokość 55px dla wszystkich pomiarów */
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.6rem;
+      font-weight: bold;
+      color: #000;
+      font-family: Arial, Helvetica, sans-serif;
+      transition: background-color 0.3s ease, color 0.3s ease;
+    }
+
+    .box-yellow    { background-color: #ffffa0; }
+    .box-pink      { background-color: #f080ff; }
+    .box-blue      { background-color: var(--co-low); color: #000; }
+    .box-orange    { background-color: var(--co-high); color: #000; }
+    .box-lightblue { background-color: var(--box-lightblue); }
+    .box-gray      { background-color: #777777; color: #222222; }
+
+    .box-cyan {
+      background-color: #00e5ff;
+      width: 120px;
+      height: 110px;
+      margin-top: 10px;
+    }
+
+    /* Style dla Dużych i Wyrazistych Strzałek Trendu */
+    .trend-arrow {
+      margin-left: 6px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .trend-arrow svg {
+      width: 22px;
+      height: 26px;
+      filter: drop-shadow(0px 1px 2px rgba(0, 0, 0, 0.6));
+    }
+
+    /* Układ panelu JACUZZI (Karta J) */
+    .jacuzzi-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      gap: 20px;
+      padding-top: 5px;
+      overflow-y: auto;
+      max-height: 100%;
+    }
+
+    .jacuzzi-top-row {
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      gap: 25px;
+      width: 100%;
+      flex-wrap: wrap;
+    }
+
+    .j-btn-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .j-btn-label {
+      color: var(--term-green);
+      font-size: 1.1rem;
+      font-weight: bold;
+      font-family: Arial, Helvetica, sans-serif;
+      letter-spacing: 1px;
+    }
+
+    .j-btn {
+      width: 70px;
+      height: 70px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s ease;
+      outline: none;
+      border: none;
+      position: relative;
+    }
+
+    .j-btn-inner {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    @keyframes spinBorder {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .j-spinner {
+      width: 44px;
+      height: 44px;
+      border: 4px solid rgba(255, 255, 255, 0.2);
+      border-top: 4px solid var(--term-green);
+      border-radius: 50%;
+      animation: spinBorder 0.8s linear infinite;
+      position: absolute;
+    }
+
+    /* Stany wizualne przycisków Jacuzzi */
+    .j-state-off {
+      background-color: #4a4a4a;
+      color: #aaa;
+    }
+
+    .j-state-pending-on, .j-state-pending-off {
+      background-color: #333333;
+      color: var(--term-green);
+    }
+
+    .j-state-on {
+      background-color: var(--term-green);
+      color: #000;
+      box-shadow: 0 0 22px var(--term-green-glow);
+    }
+
+    .j-btn-disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* Sekcja dodatkowych przycisków WODA i GRZEJNIK i ALL */
+    .jacuzzi-bottom-row {
+      display: flex;
+      gap: 40px;
+      justify-content: center;
+      width: 100%;
+      border-top: 1px solid #222;
+      padding-top: 15px;
+    }
+
+    .j-control-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      background: #0d0d0d;
+      border: 1px solid #222;
+      padding: 12px 18px;
+      border-radius: 12px;
+      width: 200px;
+    }
+
+    .j-control-title {
+      font-size: 1rem;
+      color: var(--term-yellow);
+      font-weight: bold;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .j-sub-btns {
+      display: flex;
+      gap: 15px;
+      width: 100%;
+      justify-content: center;
+    }
+
+    .j-sub-btn, .s-sub-btn {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 0.85rem;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      outline: none;
+      border: 2px solid transparent;
+      user-select: none;
+    }
+
+    .j-sub-on-active, .s-sub-on-active {
+      background: radial-gradient(circle at 35% 35%, #00ff00, #00aa00);
+      color: #000;
+      border-color: #ffffff;
+      box-shadow: 0 0 15px rgba(0, 255, 0, 0.8);
+    }
+
+    .j-sub-on-inactive, .s-sub-on-inactive {
+      background: radial-gradient(circle at 35% 35%, #004400, #001a00);
+      color: #008800;
+      border-color: #003300;
+      box-shadow: none;
+      opacity: 0.6;
+    }
+
+    .j-sub-off-active, .s-sub-off-active {
+      background: radial-gradient(circle at 35% 35%, #ff4d4d, #cc0000);
+      color: #fff;
+      border-color: #ffffff;
+      box-shadow: 0 0 15px rgba(255, 0, 85, 0.8);
+    }
+
+    .j-sub-off-inactive, .s-sub-off-inactive {
+      background: radial-gradient(circle at 35% 35%, #550011, #220005);
+      color: #880022;
+      border-color: #330008;
+      box-shadow: none;
+      opacity: 0.6;
+    }
+    
+    .s-sub-disabled, .k-sub-disabled {
+       background: radial-gradient(circle at 35% 35%, #555, #333);
+       color: #888;
+       border-color: #444;
+       box-shadow: none;
+       opacity: 0.5;
+       cursor: not-allowed;
+    }
+
+    .code-sub-txt {
+      font-size: 0.75rem;
+      color: #888;
+      font-family: 'Courier New', Courier, monospace;
+      margin-top: 2px;
+      letter-spacing: 0.5px;
+    }
+
+    /* Układ panelu Kart CO-SALON (C) oraz KOTY (K) */
+    .co-panel-container, .k-panel-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+      gap: 15px;
+    }
+
+    .btn-co-mode {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 1.25rem;
+      font-weight: bold;
+      border-radius: 10px;
+      cursor: pointer;
+      letter-spacing: 1px;
+      transition: all 0.25s ease;
+      outline: none;
+    }
+
+    .btn-co-mode.active-mode {
+      color: #00ff00;
+      border: 2px solid #00ff00;
+      background-color: rgba(0, 255, 0, 0.12);
+      box-shadow: 0 0 12px rgba(0, 255, 0, 0.4);
+    }
+
+    .btn-co-mode.inactive-mode {
+      color: #005500;
+      border: 2px solid #003300;
+      background-color: #001100;
+      box-shadow: none;
+    }
+
+    .co-adj-btns {
+      display: flex;
+      gap: 8px;
+      width: 100%;
+      margin-top: 4px;
+    }
+
+    .btn-adj {
+      flex: 1;
+      background: #1e1e1e;
+      border: 1px solid var(--term-green);
+      color: var(--term-green);
+      font-weight: bold;
+      font-size: 1.2rem;
+      border-radius: 6px;
+      cursor: pointer;
+      padding: 4px 0;
+      transition: all 0.2s ease;
+      outline: none;
+    }
+
+    .btn-adj:hover {
+      background: var(--term-green);
+      color: #000;
+      box-shadow: 0 0 8px var(--term-green-glow);
+    }
+
+    .st-indicator-circle {
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .st-indicator-circle.state-low {
+      background: radial-gradient(circle at 35% 35%, #ffb380 0%, #ff7825 50%, #cc4400 100%);
+      box-shadow: 0 0 25px #ff7825, 0 0 40px rgba(255, 120, 37, 0.6);
+      color: #fff;
+    }
+
+    .st-indicator-circle.state-high {
+      background: radial-gradient(circle at 35% 35%, #80e5ff 0%, #00aaff 50%, #0055cc 100%);
+      box-shadow: 0 0 25px #00aaff, 0 0 40px rgba(0, 170, 255, 0.6);
+      color: #fff;
+    }
+    
+    .st-indicator-circle.state-disabled {
+      background: radial-gradient(circle at 35% 35%, #555, #333);
+      box-shadow: none;
+      color: #888;
+    }
+
+    /* Moduł Harmonogramu Dobowego */
+    .schedule-box {
+      background: #0a0a0a;
+      border: 2px solid var(--term-yellow);
+      border-radius: 14px;
+      padding: 12px 18px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 0 15px rgba(255, 255, 0, 0.15);
+      width: fit-content;
+      min-width: 140px;
+    }
+
+    .schedule-inputs {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      width: 100%;
+      align-items: center;
+    }
+
+    .schedule-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .schedule-label {
+      font-size: 0.9rem;
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+
+    .schedule-label.day-lbl { color: #ffcc00; }
+    .schedule-label.night-lbl { color: #33b5ff; }
+
+    .schedule-time-input {
+      background: #151515;
+      border: 1px solid #444;
+      color: #fff;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 1.25rem;
+      font-weight: bold;
+      padding: 6px 12px;
+      border-radius: 6px;
+      outline: none;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .schedule-time-input:focus {
+      border-color: var(--term-yellow);
+      box-shadow: 0 0 8px rgba(255, 255, 0, 0.4);
+    }
+
+    /* Style dla przycisków sterowania grzaniem pod TEMP i WILG */
+    .heat-btns-container {
+      display: flex;
+      gap: 15px;
+      width: 100%;
+      margin-top: 4px;
+    }
+
+    .btn-heat {
+      flex: 1;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 0.85rem;
+      font-weight: bold;
+      padding: 8px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      letter-spacing: 1px;
+      transition: all 0.2s ease;
+      outline: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-transform: uppercase;
+    }
+
+    .btn-heat-red {
+      background: radial-gradient(circle at 35% 35%, #ff4d4d, #cc0000);
+      color: #fff;
+      border: 2px solid #ff1a1a;
+      box-shadow: 0 2px 10px rgba(255, 0, 0, 0.4);
+    }
+
+    .btn-heat-red:hover {
+      box-shadow: 0 0 15px rgba(255, 0, 0, 0.8);
+      transform: translateY(-1px);
+    }
+
+    .btn-heat-blue {
+      background: radial-gradient(circle at 35% 35%, #4da6ff, #0066cc);
+      color: #fff;
+      border: 2px solid #1a8cff;
+      box-shadow: 0 2px 10px rgba(0, 102, 204, 0.4);
+    }
+
+    .btn-heat-blue:hover {
+      box-shadow: 0 0 15px rgba(0, 149, 255, 0.8);
+      transform: translateY(-1px);
+    }
+    
+    .btn-heat-disabled {
+      background: radial-gradient(circle at 35% 35%, #555, #333) !important;
+      border-color: #444 !important;
+      box-shadow: none !important;
+      opacity: 0.5 !important;
+      cursor: not-allowed !important;
+    }
+
+    /* Układ panelu LICZNIK (Karta L) */
+    .licznik-container {
+      display: flex;
+      width: 100%;
+      justify-content: space-around;
+      align-items: flex-start;
+      padding: 10px 20px;
+    }
+
+    .licznik-col {
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+
+    .licznik-row {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .licznik-lbl {
+      color: var(--lbl-yellow);
+      font-size: 1.5rem;
+      font-weight: bold;
+      font-family: Arial, Helvetica, sans-serif;
+      min-width: 140px;
+      text-align: right;
+      letter-spacing: 1px;
+    }
+
+    .licznik-lbl-right {
+      min-width: 70px;
+      text-align: right;
+    }
+
+    .licznik-box {
+      width: 180px;
+      height: 55px;
+      background-color: var(--lbl-yellow);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5rem;
+      font-weight: bold;
+      color: #000;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    .reset-section {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      margin-top: 15px;
+    }
+
+    .reset-lbl {
+      color: var(--lbl-yellow);
+      font-size: 1.3rem;
+      font-weight: bold;
+      font-family: Arial, Helvetica, sans-serif;
+      letter-spacing: 1px;
+    }
+
+    .btn-reset-circle {
+      width: 70px;
+      height: 70px;
+      border-radius: 50%;
+      background-color: var(--btn-orange);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      font-weight: bold;
+      color: #000;
+      font-family: Arial, Helvetica, sans-serif;
+      cursor: pointer;
+      user-select: none;
+      transition: transform 0.1s ease, box-shadow 0.1s ease;
+      box-shadow: 0 4px 10px rgba(255, 160, 72, 0.4);
+    }
+
+    .btn-reset-circle.pressed {
+      transform: scale(0.92);
+      box-shadow: 0 0 20px rgba(255, 160, 72, 0.9);
+      background-color: #ff8010;
+    }
+
+    .btn-chart-circle {
+      background-color: var(--term-cyan);
+      box-shadow: 0 4px 10px rgba(0, 255, 255, 0.4);
+    }
+
+    .btn-chart-circle:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 20px rgba(0, 255, 255, 0.8);
+    }
+
+    /* Style dla Wykresu V10 */
+    #v10Chart {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    input[type=range] {
+      width: 100%;
+      height: 8px;
+      background: #222;
+      border-radius: 4px;
+      outline: none;
+      accent-color: var(--term-cyan);
+      cursor: pointer;
+    }
+
+    .sent     { color: var(--term-cyan); }
+    .received { color: var(--term-yellow); }
+    .info     { color: #888; }
+
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #000; }
+    ::-webkit-scrollbar-thumb { background: var(--term-green); border-radius: 2px; }
+
+    /* Układ przycisków SIEC */
+    .siec-btn-group {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    
+    .siec-btn-label {
+      color: #ffffff;
+      font-size: 1rem;
+      font-weight: bold;
+      font-family: Arial, Helvetica, sans-serif;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      width: 100px;
+    }
+
+    /* --- STYLE DLA MODALA SETUP --- */
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.85); z-index: 1000;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .modal-content {
+      background: #0d0d0d; border: 2px solid var(--term-green);
+      border-radius: 12px; padding: 20px; width: 95%; max-width: 500px;
+      max-height: 90vh; display: flex; flex-direction: column;
+      box-shadow: 0 0 25px rgba(0, 255, 0, 0.2);
+    }
+    .modal-body {
+      overflow-y: auto; flex: 1; margin-bottom: 20px; padding-right: 10px;
+    }
+    .modal-body::-webkit-scrollbar { width: 6px; }
+    .modal-body::-webkit-scrollbar-track { background: #111; }
+    .modal-body::-webkit-scrollbar-thumb { background: var(--term-green); border-radius: 3px; }
+
+    .modal-footer {
+      display: flex; justify-content: space-between; gap: 15px; border-top: 1px solid #333; padding-top: 15px;
+    }
+    .setup-group {
+      margin-bottom: 20px; border: 1px solid #222; padding: 12px; border-radius: 8px; background: #151515;
+    }
+    .setup-group h3 { 
+      color: var(--term-cyan); font-size: 1rem; margin-bottom: 15px; border-bottom: 1px solid #333; 
+      padding-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; font-family: Arial, sans-serif;
+    }
+    .setup-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .setup-row label { color: #ddd; font-size: 0.9rem; font-family: Arial, sans-serif; font-weight: bold;}
+    .setup-row input {
+      background: #000; color: var(--term-yellow); border: 1px solid #444;
+      padding: 8px; border-radius: 4px; font-family: monospace; width: 140px; text-align: center;
+      font-size: 1rem; transition: border-color 0.2s;
+    }
+    .setup-row input:focus {
+      border-color: var(--term-yellow); outline: none; box-shadow: 0 0 5px rgba(255,255,0,0.3);
+    }
+	/* Nowe style dla paska narzędzi, modala logów i wyłączonych kart */
+    .term-toolbar-container {
+      display: flex; flex-direction: column; align-items: center; gap: 12px; margin-bottom: 10px; user-select: none;
+    }
+    .term-toolbar-row { display: flex; gap: 15px; justify-content: center; }
+    .yellow-dot {
+      width: 18px; height: 18px; background-color: transparent; border: 2px solid var(--term-yellow); border-radius: 50%; display: inline-block; transition: all 0.1s ease;
+    }
+    .btn-clear-term:active .yellow-dot { background-color: var(--term-yellow); box-shadow: 0 0 8px var(--term-yellow); }
+    .btn-yellow { color: var(--term-yellow); }
+    .btn-yellow:hover { text-shadow: 0 0 8px var(--term-yellow); }
+    .tab-btn.v0-disabled { background: radial-gradient(circle at 35% 35%, #333, #111); color: #777; box-shadow: inset 0 0 5px #000; border-color: #333; }
+    .log-item { padding: 8px; border-bottom: 1px solid #222; font-family: monospace; font-size: 0.85rem; }
+    .log-time { color: var(--term-cyan); margin-right: 10px; font-weight: bold; }
+    .log-err { color: var(--term-red); }
+    .log-warn { color: var(--term-yellow); }
+/* Style dla wykresu ENV i powiadomień */
+    .env-stats-bar { display: flex; gap: 15px; font-size: 0.85rem; color: #aaa; }
+    .env-stat-t { color: #00ffff; font-weight: bold; }
+    .env-stat-p { color: #ffaa00; font-weight: bold; }
+    .btn-range { background: #111; border: 1px solid var(--term-green); color: var(--term-green); padding: 4px 10px; border-radius: 4px; cursor: pointer; font-family: monospace; font-weight: bold; transition: 0.2s; }
+    .btn-range.active { background: var(--term-green); color: #000; }
+    .cursor-pointer { cursor: pointer; transition: 0.2s; }
+    .cursor-pointer:hover { background-color: #222 !important; box-shadow: 0 0 10px var(--term-green-glow); }
+  </style>
+</head>
+<body>
+
+<!-- Nagłówek Górny -->
+<div id="header">
+  <div class="header-info">
+    <span class="static-txt">ESP32C3</span>
+    <span class="dynamic-url" id="ws-url-display">ws://192.168.2.183:8000</span>
+    <span class="static-txt" id="header-name-display">POMPA</span>
+  </div>
+
+  <!-- Pasek przycisków / wskaźników V0 -->
+  <div id="nav-buttons">
+    <div id="btn-tab-P" class="tab-btn v0-dark active-tab" onclick="switchTab('P')">P</div>
+    <div id="btn-tab-J" class="tab-btn v0-dark" onclick="switchTab('J')">J</div>
+    <div id="btn-tab-S" class="tab-btn v0-dark" onclick="switchTab('S')">S</div>
+    <div id="btn-tab-L" class="tab-btn v0-dark" onclick="switchTab('L')">L</div>
+    <div id="btn-tab-C" class="tab-btn v0-dark" onclick="switchTab('C')">C</div>
+    <div id="btn-tab-K" class="tab-btn v0-dark" onclick="switchTab('K')">K</div>
+    <div id="btn-tab-T" class="tab-btn v0-dark" onclick="switchTab('T')">T</div>
+  </div>
+</div>
+
+<div id="main-container">
+  <!-- Terminal i Input -->
+  <div id="terminal-section">
+    <!-- Pasek kontrolny HIDE, START, HOLD, CLEAR, SETUP -->
+<!-- Pasek kontrolny terminala w dwóch rzędach -->
+    <div class="term-toolbar-container">
+      <div class="term-toolbar-row">
+        <label class="checkbox-container">HIDE<input type="checkbox" id="chk-hide-term" onchange="toggleTerminalHide()"><span class="custom-box"></span></label>
+        <label class="checkbox-container">START<input type="checkbox" id="chk-start" onchange="toggleStart()"><span class="custom-box"></span></label>
+        <label class="checkbox-container">HOLD<input type="checkbox" id="chk-hold" onchange="toggleHold()"><span class="custom-box"></span></label>
+      </div>
+      <div class="term-toolbar-row">
+        <button class="btn-clear-term" onclick="openSetupModal()">SETUP<span class="green-dot"></span></button>
+       <button class="btn-clear-term" onclick="openLogsModal()">LOGI<span id="logi-notification-dot" class="green-dot"></span></button>
+        <button class="btn-clear-term" onclick="clearTerminal()">CLEAR<span class="green-dot"></span></button>
+      </div>
+    </div>
+
+    <div id="terminal"></div>
+    <input type="text" id="inputline" placeholder="Wpisz komendę np. >1, ? dla pomocy" autofocus autocomplete="off">
+  </div>
+
+  <!-- Panel Sterowania -->
+  <div id="control-panel">
+    <!-- Przycisk Pełnego Ekranu -->
+    <button id="btn-fullscreen" class="btn-fullscreen" onclick="toggleFullscreen()" title="Przełącz pełny ekran">
+      <svg id="fs-icon-expand" viewBox="0 0 24 24">
+        <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+      </svg>
+      <svg id="fs-icon-compress" viewBox="0 0 24 24" style="display: none;">
+        <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>
+      </svg>
+    </button>
+
+
+
+    <!-- Panel dla POMPA (Karta P) -->
+    <div class="panel-body pompa-panel-custom" id="pompa-panel-body">
+      <div class="panel-left">
+        <div class="led-container">
+          <div id="status-led" class="led-indicator off">
+            <svg class="rotor-icon" viewBox="0 0 24 24">
+              <path d="M12 11c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-9C7.03 2 3 6.03 3 11c0 3.31 1.8 6.21 4.5 7.78L6 22l4.22-1.5c.57.18 1.17.3 1.78.3 4.97 0 9-4.03 9-9s-4.03-9-9-9zm0 16c-3.87 0-7-3.13-7-7 0-2.38 1.19-4.47 3-5.74V11c0 2.21 1.79 4 4 4s4-1.79 4-4V7.26c1.81 1.27 3 3.36 3 5.74 0 3.87-3.13 7-7 7z"/>
+            </svg>
+          </div>
+          <div class="led-label" id="led-status-text">STAN: NIEZNANY</div>
+        </div>
+
+        <div class="btn-group">
+          <button class="btn btn-on" id="btn-on" onclick="handleQuickCommand('>1')">
+            <span>▲ WŁĄCZ</span>
+          </button>
+          <button class="btn btn-off" id="btn-off" onclick="handleQuickCommand('>0')">
+            <span>▼ WYŁĄCZ</span>
+          </button>
+        </div>
+
+        <div id="box-V11" class="val-box box-cyan">
+          <span id="val-V11">start</span>
+        </div>
+      </div>
+
+      <div class="panel-right">
+        <div class="value-grid">
+          <div class="val-item">
+            <div class="val-label">CO2</div>
+            <div id="box-V26" class="val-box box-yellow">
+              <span id="val-V26">V26</span>
+            </div>
+          </div>
+
+          <div class="val-item">
+            <div class="val-label">TVOC</div>
+            <div id="box-V27" class="val-box box-yellow">
+              <span id="val-V27">V27</span>
+            </div>
+          </div>
+
+          <div class="val-item">
+            <div class="val-label">TEMP</div>
+            <div id="box-V21" class="val-box box-pink" style="display: flex; align-items: center; justify-content: center;">
+              <span id="val-V21">V21</span>
+              <span id="trend-p-V21" class="trend-arrow" style="color: #888;">
+                <svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="10" width="18" height="4" rx="2"/></svg>
+              </span>
+            </div>
+          </div>
+
+          <div class="val-item">
+            <div class="val-label">CIŚNIENIE</div>
+            <div id="box-V22" class="val-box box-pink cursor-pointer" onclick="showEnvChart()" style="display: flex; align-items: center; justify-content: center;">
+              <span id="val-V22">V22</span>
+              <span id="trend-p-V22" class="trend-arrow" style="color: #888;">
+                <svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="10" width="18" height="4" rx="2"/></svg>
+              </span>
+            </div>
+          </div>
+
+          <div class="val-item">
+            <div class="val-label">TEMP ZEW</div>
+            <div id="box-p-s-V11" class="val-box box-lightblue cursor-pointer" style="display: flex; align-items: center; justify-content: center;" onclick="showEnvChart()">
+              <span id="val-p-s-V11">V11</span>
+              <span id="trend-p-s-V11" class="trend-arrow" style="color: #888;">
+                <svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="10" width="18" height="4" rx="2"/></svg>
+              </span>
+            </div>
+          </div>
+
+          <div class="val-item">
+            <div class="val-label">WILG ZEW</div>
+            <div id="box-p-s-V12" class="val-box box-lightblue cursor-pointer" style="display: flex; align-items: center; justify-content: center;" onclick="showEnvChart()">
+              <span id="val-p-s-V12">V12</span>
+              <span id="trend-p-s-V12" class="trend-arrow" style="color: #888;">
+                <svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="10" width="18" height="4" rx="2"/></svg>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel dla JACUZZI (Karta J) -->
+    <div class="panel-body" id="jacuzzi-panel-body" style="display: none;">
+      <div class="jacuzzi-container">
+        <!-- Górny wiersz z 6 przyciskami głównymi -->
+        <div class="jacuzzi-top-row">
+          <div class="j-btn-wrapper">
+            <div class="j-btn-label">K-dom</div>
+            <div id="j-btn-kdom" class="j-btn j-state-off" onclick="handleJacuzziClick('kdom')">
+              <div class="j-spinner" style="display:none;"></div>
+              <div class="j-btn-inner">
+                <svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+              </div>
+            </div>
+          </div>
+
+          <div class="j-btn-wrapper">
+            <div class="j-btn-label">Koty</div>
+            <div id="j-btn-koty" class="j-btn j-state-off" onclick="handleJacuzziClick('koty')">
+              <div class="j-spinner" style="display:none;"></div>
+              <div class="j-btn-inner">
+                <svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M12 11.5c1.38 0 2.5-1.57 2.5-3.5S13.38 4.5 12 4.5s-2.5 1.57-2.5 3.5 1.12 3.5 2.5 3.5zm-5 1.5c1.1 0 2-1.34 2-3s-.9-3-2-3-2 1.34-2 3 .9 3 2 3zm10 0c1.1 0 2-1.34 2-3s-.9-3-2-3-2 1.34-2 3 .9 3 2 3zm-9.3 5.38c.68 1.16 2.3 2.12 4.3 2.12s3.62-.96 4.3-2.12c.48-.82.16-1.88-.7-2.28-1.07-.5-2.31-.85-3.6-.85s-2.53.35-3.6.85c-.86.4-1.18 1.46-.7 2.28z"/></svg>
+              </div>
+            </div>
+          </div>
+
+          <div class="j-btn-wrapper">
+            <div class="j-btn-label">Gwiazda</div>
+            <div id="j-btn-gwiazda" class="j-btn j-state-off" onclick="handleJacuzziClick('gwiazda')">
+              <div class="j-spinner" style="display:none;"></div>
+              <div class="j-btn-inner">
+                <svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+              </div>
+            </div>
+          </div>
+
+          <div class="j-btn-wrapper">
+            <div class="j-btn-label">Garaż</div>
+            <div id="j-btn-garaz" class="j-btn j-state-off" onclick="handleJacuzziClick('garaz')">
+              <div class="j-spinner" style="display:none;"></div>
+              <div class="j-btn-inner">
+                <svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M19 13c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zM5 13c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm3.83-3h8.34c.8 0 1.52.48 1.84 1.21l1.19 2.79H3.8l1.19-2.79c.32-.73 1.04-1.21 1.84-1.21zM19 5H5c-1.1 0-2 .9-2 2v2h18V7c0-1.1-.9-2-2-2z"/></svg>
+              </div>
+            </div>
+          </div>
+
+          <div class="j-btn-wrapper">
+            <div class="j-btn-label">Jacuzzi</div>
+            <div id="j-btn-jacuzzi" class="j-btn j-state-off" onclick="handleJacuzziClick('jacuzzi')">
+              <div class="j-spinner" style="display:none;"></div>
+              <div class="j-btn-inner">
+                <svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M12 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 3c-1.66 0-3 1.34-3 3 0 2 3 5 3 5s3-3 3-5c0-1.66-1.34-3-3-3zm-9 9c1.5 0 2.25-.5 3-.5s1.5 .5 3 .5 2.25-.5 3-.5 1.5 .5 3 .5 2.25-.5 3-.5 1.5 .5 3 .5 2.25-.5 3-.5 1.5 .5 3 .5v2c-.75 0-1.5-.5-3-.5s-1.5 .5-3 .5-2.25-.5-3-.5-1.5 .5-3 .5-2.25-.5-3-.5-1.5 .5-3 .5V20z"/></svg>
+              </div>
+            </div>
+          </div>
+
+          <div class="j-btn-wrapper">
+            <div class="j-btn-label">Wolny</div>
+            <div id="j-btn-wolny" class="j-btn j-state-off" onclick="handleJacuzziClick('wolny')">
+              <div class="j-spinner" style="display:none;"></div>
+              <div class="j-btn-inner">
+                <svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z"/></svg>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dolny wiersz z dodatkowymi przyciskami WODA, GRZEJNIK i ALL -->
+        <div class="jacuzzi-bottom-row">
+          <div class="j-control-group">
+            <div class="j-control-title">WODA</div>
+            <div class="j-sub-btns">
+              <button id="btn-woda-on" class="j-sub-btn j-sub-on-inactive" onclick="handleSubJacuzziAction('woda', 'ON')">ON</button>
+              <button id="btn-woda-off" class="j-sub-btn j-sub-off-active" onclick="handleSubJacuzziAction('woda', 'OFF')">OFF</button>
+            </div>
+            <div id="lbl-code-woda" class="code-sub-txt">Wpisz KOD</div>
+          </div>
+
+          <div class="j-control-group">
+            <div class="j-control-title">GRZEJNIK</div>
+            <div class="j-sub-btns">
+              <button id="btn-grz-on" class="j-sub-btn j-sub-on-inactive" onclick="handleSubJacuzziAction('grzejnik', 'ON')">ON</button>
+              <button id="btn-grz-off" class="j-sub-btn j-sub-off-active" onclick="handleSubJacuzziAction('grzejnik', 'OFF')">OFF</button>
+            </div>
+            <div id="lbl-code-grz" class="code-sub-txt">Wpisz KOD</div>
+          </div>
+
+          <div class="j-control-group">
+            <div class="j-control-title">ALL</div>
+            <div class="j-sub-btns">
+              <button id="btn-jall-on" class="j-sub-btn j-sub-on-active" onclick="handleJacuzziAllAction('ON')">ON</button>
+              <button id="btn-jall-off" class="j-sub-btn j-sub-off-active" onclick="handleJacuzziAllAction('OFF')">OFF</button>
+            </div>
+            <div class="code-sub-txt">SEKWENCJA</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel dla SIEC (Karta S) -->
+    <div class="panel-body" id="siec-panel-body" style="display: none; align-items: flex-start; justify-content: center; gap: 80px; width: 100%; padding-top: 20px;">
+      
+      <!-- Lewa kolumna (Nowe przyciski PD) -->
+      <div style="display: flex; flex-direction: column; gap: 20px;">
+        <div class="siec-btn-group">
+          <button id="btn-prog4-on" class="s-sub-btn s-sub-disabled" onclick="handleSiecAction(4, 'ON')">ON</button>
+          <button id="btn-prog4-off" class="s-sub-btn s-sub-disabled" onclick="handleSiecAction(4, 'OFF')">OFF</button>
+          <div class="siec-btn-label" id="lbl-prog4">PD1</div>
+        </div>
+        <div class="siec-btn-group">
+          <button id="btn-prog5-on" class="s-sub-btn s-sub-disabled" onclick="handleSiecAction(5, 'ON')">ON</button>
+          <button id="btn-prog5-off" class="s-sub-btn s-sub-disabled" onclick="handleSiecAction(5, 'OFF')">OFF</button>
+          <div class="siec-btn-label" id="lbl-prog5">PD2</div>
+        </div>
+        <div class="siec-btn-group">
+          <button id="btn-prog6-on" class="s-sub-btn s-sub-disabled" onclick="handleSiecAction(6, 'ON')">ON</button>
+          <button id="btn-prog6-off" class="s-sub-btn s-sub-disabled" onclick="handleSiecAction(6, 'OFF')">OFF</button>
+          <div class="siec-btn-label" id="lbl-prog6">PD3</div>
+        </div>
+        <div class="siec-btn-group">
+          <button id="btn-prog7-on" class="s-sub-btn s-sub-disabled" onclick="handleSiecAction(7, 'ON')">ON</button>
+          <button id="btn-prog7-off" class="s-sub-btn s-sub-disabled" onclick="handleSiecAction(7, 'OFF')">OFF</button>
+          <div class="siec-btn-label" id="lbl-prog7">PD4</div>
+        </div>
+        <div class="siec-btn-group">
+          <button id="btn-prog8-on" class="s-sub-btn s-sub-disabled" onclick="handleSiecAction(8, 'ON')">ON</button>
+          <button id="btn-prog8-off" class="s-sub-btn s-sub-disabled" onclick="handleSiecAction(8, 'OFF')">OFF</button>
+          <div class="siec-btn-label" id="lbl-prog8">PD5</div>
+        </div>
+      </div>
+
+      <!-- Prawa kolumna (Istniejące przyciski + ALL) -->
+      <div style="display: flex; flex-direction: column; gap: 20px;">
+        <div class="siec-btn-group">
+          <button id="btn-prog0-on" class="s-sub-btn s-sub-disabled" onclick="handleSiecAction(0, 'ON')">ON</button>
+          <button id="btn-prog0-off" class="s-sub-btn s-sub-disabled" onclick="handleSiecAction(0, 'OFF')">OFF</button>
+          <div class="siec-btn-label" id="lbl-prog0">TARAS</div>
+        </div>
+        <div class="siec-btn-group">
+          <button id="btn-prog1-on" class="s-sub-btn s-sub-disabled" onclick="handleSiecAction(1, 'ON')">ON</button>
+          <button id="btn-prog1-off" class="s-sub-btn s-sub-disabled" onclick="handleSiecAction(1, 'OFF')">OFF</button>
+          <div class="siec-btn-label" id="lbl-prog1">CHOINKA</div>
+        </div>
+        <div class="siec-btn-group">
+          <button id="btn-prog2-on" class="s-sub-btn s-sub-disabled" onclick="handleSiecAction(2, 'ON')">ON</button>
+          <button id="btn-prog2-off" class="s-sub-btn s-sub-disabled" onclick="handleSiecAction(2, 'OFF')">OFF</button>
+          <div class="siec-btn-label" id="lbl-prog2">GWIAZDA</div>
+        </div>
+        <div class="siec-btn-group">
+          <button id="btn-prog3-on" class="s-sub-btn s-sub-disabled" onclick="handleSiecAction(3, 'ON')">ON</button>
+          <button id="btn-prog3-off" class="s-sub-btn s-sub-disabled" onclick="handleSiecAction(3, 'OFF')">OFF</button>
+          <div class="siec-btn-label" id="lbl-prog3">SOPLE</div>
+        </div>
+
+        <!-- Grupa ALL -->
+        <div class="siec-btn-group" style="border-top: 1px solid #333; padding-top: 20px;">
+          <button id="btn-sall-on" class="s-sub-btn s-sub-disabled" onclick="handleSiecAllAction('ON')">ON</button>
+          <button id="btn-sall-off" class="s-sub-btn s-sub-disabled" onclick="handleSiecAllAction('OFF')">OFF</button>
+          <div class="siec-btn-label" style="color: var(--term-yellow);">ALL</div>
+        </div>
+      </div>
+    </div>
+    <!-- Panel dla CO-SALON (Karta C) -->
+    <div class="panel-body" id="co-panel-body" style="display: none;">
+      <div class="co-panel-container" style="flex-direction: row; align-items: flex-end; justify-content: center; gap: 40px; height: fit-content;">
+        
+        <!-- LEWA KOLUMNA: Pomiary, Dzień, Noc -->
+        <div style="display: flex; flex-direction: column; gap: 25px; align-items: center;">
+          
+          <!-- Pomiary TEMP i WILG oraz przyciski sterowania grzaniem -->
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: flex; gap: 15px; justify-content: center;">
+              <div class="val-item" style="width: 140px;">
+                <div class="val-label">TEMP</div>
+                <div class="val-box box-pink" style="display: flex; align-items: center; justify-content: center;">
+                  <span id="val-co-V11">V11</span>
+                  <span id="trend-co-V11" class="trend-arrow" style="color: #888;">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="10" width="18" height="4" rx="2"/></svg>
+                  </span>
+                </div>
+              </div>
+              <div class="val-item" style="width: 140px;">
+                <div class="val-label">WILG</div>
+                <div class="val-box box-pink">
+                  <span id="val-co-V12">V12</span>
+                </div>
+              </div>
+            </div>
+            <!-- Przyciski pod TEMP i WILG -->
+            <div class="heat-btns-container">
+              <button class="btn-heat btn-heat-red" onclick="sendHeatCommand('ON')">GRZANIE ON</button>
+              <button class="btn-heat btn-heat-blue" onclick="sendHeatCommand('OFF')">GRZANIE OFF</button>
+            </div>
+          </div>
+
+          <!-- Blok DZIEŃ -->
+          <div style="display: flex; align-items: center; justify-content: center; gap: 15px;">
+            <div class="val-item" style="width: 120px;">
+              <div class="val-label">LOW</div>
+              <div id="box-co-low-day" class="val-box box-blue">
+                <span id="val-co-low-day">22.5°C</span>
+              </div>
+              <div class="co-adj-btns">
+                <button class="btn-adj" onclick="adjustCoThreshold('lowDay', -0.1)">-</button>
+                <button class="btn-adj" onclick="adjustCoThreshold('lowDay', +0.1)">+</button>
+              </div>
+            </div>
+            
+            <button id="btn-co-dzien" class="btn-co-mode active-mode" onclick="setCoMode('DAY')" style="padding: 6px 14px; font-size: 1.1rem; height: fit-content; min-width: 80px;">DZIEŃ</button>
+
+            <div class="val-item" style="width: 120px;">
+              <div class="val-label">HIGH</div>
+              <div id="box-co-high-day" class="val-box box-orange">
+                <span id="val-co-high-day">23.0°C</span>
+              </div>
+              <div class="co-adj-btns">
+                <button class="btn-adj" onclick="adjustCoThreshold('highDay', -0.1)">-</button>
+                <button class="btn-adj" onclick="adjustCoThreshold('highDay', +0.1)">+</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Blok NOC -->
+          <div style="display: flex; align-items: center; justify-content: center; gap: 15px;">
+            <div class="val-item" style="width: 120px;">
+              <div class="val-label">LOW</div>
+              <div id="box-co-low-night" class="val-box box-gray">
+                <span id="val-co-low-night">20.0°C</span>
+              </div>
+              <div class="co-adj-btns">
+                <button class="btn-adj" onclick="adjustCoThreshold('lowNight', -0.1)">-</button>
+                <button class="btn-adj" onclick="adjustCoThreshold('lowNight', +0.1)">+</button>
+              </div>
+            </div>
+            
+            <button id="btn-co-noc" class="btn-co-mode inactive-mode" onclick="setCoMode('NIGHT')" style="padding: 6px 14px; font-size: 1.1rem; height: fit-content; min-width: 80px;">NOC</button>
+
+            <div class="val-item" style="width: 120px;">
+              <div class="val-label">HIGH</div>
+              <div id="box-co-high-night" class="val-box box-gray">
+                <span id="val-co-high-night">21.0°C</span>
+              </div>
+              <div class="co-adj-btns">
+                <button class="btn-adj" onclick="adjustCoThreshold('highNight', -0.1)">-</button>
+                <button class="btn-adj" onclick="adjustCoThreshold('highNight', +0.1)">+</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- PRAWA KOLUMNA: Zegar (Pionowy) + Śnieżynka -->
+        <div style="display: flex; gap: 25px; align-items: flex-end;">
+          <div class="schedule-box">
+            <div class="schedule-inputs">
+              <div class="schedule-group">
+                <span class="schedule-label day-lbl">DZIEŃ OD</span>
+                <input type="time" id="sched-time-day" class="schedule-time-input" value="06:00" onchange="updateScheduleTime()">
+              </div>
+              <div class="schedule-group">
+                <span class="schedule-label night-lbl">NOC OD</span>
+                <input type="time" id="sched-time-night" class="schedule-time-input" value="22:00" onchange="updateScheduleTime()">
+              </div>
+            </div>
+          </div>
+
+          <!-- Wskaźnik Ogrzewania ST -->
+          <div style="display: flex; align-items: flex-end; justify-content: center; width: 110px;">
+            <div id="st-indicator" class="st-indicator-circle state-low">
+              <svg id="st-icon-flame" viewBox="0 0 24 24" width="45" height="45" fill="currentColor">
+                <path d="M13.5 1.5c0 0-3.5 3.5-3.5 7 0 1.93 1.57 3.5 3.5 3.5s3.5-1.57 3.5-3.5c0-3.5-3.5-7-3.5-7zm-4 5c0 0-2.5 2.5-2.5 5 0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5c0-2.5-2.5-5-2.5-5zm6.5 6.5c-1.38 0-2.5 1.12-2.5 2.5 0 2.5 2.5 5 2.5 5s2.5-2.5 2.5-5c0-1.38-1.12-2.5-2.5-2.5zM12 22c-4.97 0-9-4.03-9-9 0-3.53 2.04-6.58 5-8.05.32 1.91 1.63 3.52 3.43 4.22C10.57 10 10 11.2 10 12.5c0 2.48 2.02 4.5 4.5 4.5 1.07 0 2.05-.38 2.83-1.02C16.81 19.33 14.61 22 12 22z"/>
+              </svg>
+              <svg id="st-icon-snow" viewBox="0 0 24 24" width="45" height="45" fill="currentColor" style="display: none;">
+                <path d="M22 11h-4.17l2.58-2.58-1.42-1.42L15.41 10H13V7.59l2.58-2.58-1.42-1.42L12 5.76 9.84 3.59 8.42 5.01 11 7.59V10H8.59L6.01 7.42 4.59 8.84 7.17 11H3v2h4.17l-2.58 2.58 1.42-1.42L8.59 14H11v2.41l-2.58 2.58 1.42-1.42L12 18.24l2.16 2.17 1.42-1.42L13 16.41V14h2.41l2.58 2.58 1.42-1.42L16.83 13H21v-2z"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Panel dla KOTY (Karta K) -->
+    <div class="panel-body" id="koty-panel-body" style="display: none;">
+      <div class="k-panel-container" style="flex-direction: row; align-items: flex-end; justify-content: center; gap: 40px; height: fit-content;">
+        
+        <!-- LEWA KOLUMNA: Pomiary, Dzień, Noc -->
+        <div style="display: flex; flex-direction: column; gap: 25px; align-items: center;">
+          
+          <!-- Pomiary TEMP i WILG oraz przyciski sterowania grzaniem -->
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: flex; gap: 15px; justify-content: center;">
+              <div class="val-item" style="width: 140px;">
+                <div class="val-label">TEMP</div>
+                <div class="val-box box-pink" style="display: flex; align-items: center; justify-content: center;">
+                  <span id="val-k-V11">V11</span>
+                  <span id="trend-k-V11" class="trend-arrow" style="color: #888;">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="10" width="18" height="4" rx="2"/></svg>
+                  </span>
+                </div>
+              </div>
+              <div class="val-item" style="width: 140px;">
+                <div class="val-label">WILG</div>
+                <div class="val-box box-pink">
+                  <span id="val-k-V12">V12</span>
+                </div>
+              </div>
+            </div>
+            <!-- Przyciski pod TEMP i WILG -->
+            <div class="heat-btns-container">
+              <button id="btn-k-heat-on" class="btn-heat btn-heat-red btn-heat-disabled" onclick="sendKotyHeatCommand('ON')">GRZANIE ON</button>
+              <button id="btn-k-heat-off" class="btn-heat btn-heat-blue btn-heat-disabled" onclick="sendKotyHeatCommand('OFF')">GRZANIE OFF</button>
+            </div>
+          </div>
+
+          <!-- Blok DZIEŃ -->
+          <div style="display: flex; align-items: center; justify-content: center; gap: 15px;">
+            <div class="val-item" style="width: 120px;">
+              <div class="val-label">LOW</div>
+              <div id="box-k-low-day" class="val-box box-blue">
+                <span id="val-k-low-day">22.5°C</span>
+              </div>
+              <div class="co-adj-btns">
+                <button class="btn-adj" onclick="adjustKotyThreshold('lowDay', -0.1)">-</button>
+                <button class="btn-adj" onclick="adjustKotyThreshold('lowDay', +0.1)">+</button>
+              </div>
+            </div>
+            
+            <button id="btn-k-dzien" class="btn-co-mode active-mode" onclick="setKotyMode('DAY')" style="padding: 6px 14px; font-size: 1.1rem; height: fit-content; min-width: 80px;">DZIEŃ</button>
+
+            <div class="val-item" style="width: 120px;">
+              <div class="val-label">HIGH</div>
+              <div id="box-k-high-day" class="val-box box-orange">
+                <span id="val-k-high-day">23.0°C</span>
+              </div>
+              <div class="co-adj-btns">
+                <button class="btn-adj" onclick="adjustKotyThreshold('highDay', -0.1)">-</button>
+                <button class="btn-adj" onclick="adjustKotyThreshold('highDay', +0.1)">+</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Blok NOC -->
+          <div style="display: flex; align-items: center; justify-content: center; gap: 15px;">
+            <div class="val-item" style="width: 120px;">
+              <div class="val-label">LOW</div>
+              <div id="box-k-low-night" class="val-box box-gray">
+                <span id="val-k-low-night">20.0°C</span>
+              </div>
+              <div class="co-adj-btns">
+                <button class="btn-adj" onclick="adjustKotyThreshold('lowNight', -0.1)">-</button>
+                <button class="btn-adj" onclick="adjustKotyThreshold('lowNight', +0.1)">+</button>
+              </div>
+            </div>
+            
+            <button id="btn-k-noc" class="btn-co-mode inactive-mode" onclick="setKotyMode('NIGHT')" style="padding: 6px 14px; font-size: 1.1rem; height: fit-content; min-width: 80px;">NOC</button>
+
+            <div class="val-item" style="width: 120px;">
+              <div class="val-label">HIGH</div>
+              <div id="box-k-high-night" class="val-box box-gray">
+                <span id="val-k-high-night">21.0°C</span>
+              </div>
+              <div class="co-adj-btns">
+                <button class="btn-adj" onclick="adjustKotyThreshold('highNight', -0.1)">-</button>
+                <button class="btn-adj" onclick="adjustKotyThreshold('highNight', +0.1)">+</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- PRAWA KOLUMNA: Zegar (Pionowy) + Śnieżynka -->
+        <div style="display: flex; gap: 25px; align-items: flex-end;">
+          <div class="schedule-box">
+            <div class="schedule-inputs">
+              <div class="schedule-group">
+                <span class="schedule-label day-lbl">DZIEŃ OD</span>
+                <input type="time" id="sched-k-time-day" class="schedule-time-input" value="08:00" onchange="updateKotyScheduleTime()">
+              </div>
+              <div class="schedule-group">
+                <span class="schedule-label night-lbl">NOC OD</span>
+                <input type="time" id="sched-k-time-night" class="schedule-time-input" value="20:00" onchange="updateKotyScheduleTime()">
+              </div>
+            </div>
+          </div>
+
+          <!-- Wskaźnik Ogrzewania ST -->
+          <div style="display: flex; align-items: flex-end; justify-content: center; width: 110px;">
+            <div id="st-k-indicator" class="st-indicator-circle state-disabled">
+              <svg id="st-k-icon-flame" viewBox="0 0 24 24" width="45" height="45" fill="currentColor">
+                <path d="M13.5 1.5c0 0-3.5 3.5-3.5 7 0 1.93 1.57 3.5 3.5 3.5s3.5-1.57 3.5-3.5c0-3.5-3.5-7-3.5-7zm-4 5c0 0-2.5 2.5-2.5 5 0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5c0-2.5-2.5-5-2.5-5zm6.5 6.5c-1.38 0-2.5 1.12-2.5 2.5 0 2.5 2.5 5 2.5 5s2.5-2.5 2.5-5c0-1.38-1.12-2.5-2.5-2.5zM12 22c-4.97 0-9-4.03-9-9 0-3.53 2.04-6.58 5-8.05.32 1.91 1.63 3.52 3.43 4.22C10.57 10 10 11.2 10 12.5c0 2.48 2.02 4.5 4.5 4.5 1.07 0 2.05-.38 2.83-1.02C16.81 19.33 14.61 22 12 22z"/>
+              </svg>
+              <svg id="st-k-icon-snow" viewBox="0 0 24 24" width="45" height="45" fill="currentColor" style="display: none;">
+                <path d="M22 11h-4.17l2.58-2.58-1.42-1.42L15.41 10H13V7.59l2.58-2.58-1.42-1.42L12 5.76 9.84 3.59 8.42 5.01 11 7.59V10H8.59L6.01 7.42 4.59 8.84 7.17 11H3v2h4.17l-2.58 2.58 1.42-1.42L8.59 14H11v2.41l-2.58 2.58 1.42-1.42L12 18.24l2.16 2.17 1.42-1.42L13 16.41V14h2.41l2.58 2.58 1.42-1.42L16.83 13H21v-2z"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Panel dla LICZNIK (Karta L) -->
+    <div class="panel-body" id="licznik-panel-body" style="display: none;">
+      <div class="licznik-container">
+        <!-- Lewa kolumna -->
+        <div class="licznik-col">
+          <div class="licznik-row">
+            <div class="licznik-lbl">MOC</div>
+            <div class="licznik-box"><span id="val-l-V10">V10</span></div>
+          </div>
+          <div class="licznik-row">
+            <div class="licznik-lbl">ILPULSY</div>
+            <div class="licznik-box"><span id="val-l-V12">V12</span></div>
+          </div>
+          <div class="licznik-row">
+            <div class="licznik-lbl">ENERGIA</div>
+            <div class="licznik-box"><span id="val-l-V11">V11</span></div>
+          </div>
+          <div class="licznik-row">
+            <div class="licznik-lbl">&#916; ENERGIA</div>
+            <div class="licznik-box"><span id="val-l-V13">V13</span></div>
+          </div>
+        </div>
+
+        <!-- Prawa kolumna -->
+        <div class="licznik-col">
+          <div class="licznik-row">
+            <div class="licznik-lbl licznik-lbl-right">MAX</div>
+            <div class="licznik-box"><span id="val-l-V14">V14</span></div>
+          </div>
+          <div class="licznik-row">
+            <div class="licznik-lbl licznik-lbl-right">MIN</div>
+            <div class="licznik-box"><span id="val-l-V15">V15</span></div>
+          </div>
+
+          <!-- Sekcja przycisków RESET i WYKRES -->
+          <div class="reset-section">
+            <div style="display: flex; gap: 25px; align-items: flex-end;">
+              <!-- Przycisk RESET -->
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                <div class="reset-lbl">RESET</div>
+                <div id="btn-reset-l" class="btn-reset-circle">
+                  <span id="val-l-V16">V16</span>
+                </div>
+              </div>
+
+              <!-- Przycisk WYKRES -->
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                <div class="reset-lbl">WYKRES</div>
+                <div id="btn-chart-l" class="btn-reset-circle btn-chart-circle" onclick="showChartCard()">
+                  <span style="font-size: 1.6rem;">📈</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel dla WYKRESU V10 (Pod-karta dla L) -->
+    <div class="panel-body" id="chart-panel-body" style="display: none; flex-direction: column; width: 100%; height: 100%; gap: 12px; justify-content: flex-start; align-items: stretch; padding-top: 0;">
+      
+      <!-- Pasek Górny (Nad wykresem) -->
+      <div class="chart-header-row" style="display: flex; align-items: center; justify-content: space-between;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <!-- Przycisk powrotu w postaci strzałki -->
+          <button class="btn" onclick="hideChartCard()" title="Powrót do karty L" style="border-color: var(--term-cyan); color: var(--term-cyan); padding: 6px 16px; font-size: 1.2rem; font-weight: bold;">
+            &#8592;
+          </button>
+          <!-- Przycisk CSV -->
+          <button class="btn" onclick="downloadCSV()" title="Pobierz dane w formacie CSV" style="border-color: var(--term-green); color: var(--term-green); padding: 6px 12px; font-size: 0.95rem;">
+            CSV
+          </button>
+        </div>
+        <!-- Statystyki -->
+        <div class="stats-bar" style="display: flex; gap: 15px; font-size: 0.85rem; color: #aaa;">
+          MIN: <span id="stat-min" style="color:#fff; font-weight:bold;">0</span> W | 
+          MAX: <span id="stat-max" style="color:#fff; font-weight:bold;">0</span> W | 
+          ŚREDNIA: <span id="stat-avg" style="color:#fff; font-weight:bold;">0</span> W
+        </div>
+      </div>
+
+      <!-- Canvas Wykresu -->
+      <div class="canvas-container" style="position: relative; flex: 1; min-height: 100px; background: #000; border: 1px solid #222; border-radius: 4px;">
+        <canvas id="v10Chart"></canvas>
+      </div>
+
+      <!-- Pasek odczytu kursora umieszczony pod wykresem -->
+      <div id="cursor-info-bar" style="background: #0d0d0d; border: 1px solid #222; border-radius: 4px; padding: 8px 14px; display: flex; justify-content: space-between; font-size: 0.9rem; color: var(--term-yellow); font-family: 'Courier New', Courier, monospace;">
+        <span>ODCZYT KURSORA: <b id="cursor-val" style="color: #fff;">-- W</b></span>
+        <span>CZAS REJESTRACJI: <b id="cursor-time" style="color: #fff;">--:--:--</b></span>
+        <span>PRÓBKA: <b id="cursor-idx" style="color: #fff;">#--</b></span>
+      </div>
+
+      <!-- Suwak Okna Przesuwnego -->
+      <div class="controls-row" style="display: flex; flex-direction: column; gap: 6px; background: #0d0d0d; padding: 10px 14px; border-radius: 6px; border: 1px solid #1a1a1a;">
+        <div class="slider-info" style="display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--term-yellow); font-family: 'Courier New', Courier, monospace;">
+          <span>ZAKRES OKNA: <b id="window-range-txt">0 - 100</b> / 1000</span>
+          <span>SZEROKOŚĆ OKNA: 100 PRB.</span>
+        </div>
+        <input type="range" id="windowSlider" min="0" max="900" value="900" step="1">
+      </div>
+
+      <div class="bottom-bar" style="display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; gap: 20px;">
+          <label class="checkbox-container" style="font-size: 0.85rem; color: #ccc; flex-direction: row;">
+            <input type="checkbox" id="chkAutoScroll" checked>
+            <span class="custom-box"></span>
+            Automatycznie podążaj za danymi
+          </label>
+
+          <label class="checkbox-container" style="font-size: 0.85rem; color: var(--lbl-yellow); flex-direction: row;">
+            <input type="checkbox" id="chkSMA" onchange="drawChart()">
+            <span class="custom-box"></span>
+            Linia Średniej (SMA 10)
+          </label>
+        </div>
+
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <button id="btn-toggle-rec" class="btn" onclick="toggleV10Recording()" style="border-color: var(--term-red); color: var(--term-red); font-size: 0.78rem; padding: 5px 12px;">
+            ■ STOP
+          </button>
+          <button id="btn-clear-rec" class="btn" onclick="clearV10History()" style="border-color: var(--term-yellow); color: var(--term-yellow); font-size: 0.78rem; padding: 5px 12px;">
+            🗑 KASUJ
+          </button>
+        </div>
+      </div>
+    </div>
+<!-- Panel dla WYKRESU ENV (Temperatura i Ciśnienie) -->
+    <div class="panel-body" id="env-chart-panel-body" style="display: none; flex-direction: column; width: 100%; height: 100%; gap: 12px; justify-content: flex-start; align-items: stretch; padding-top: 0;">
+      <div class="chart-header-row" style="display: flex; align-items: center; justify-content: space-between;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <button class="btn" onclick="hideEnvChart()" title="Powrót" style="border-color: var(--term-cyan); color: var(--term-cyan); padding: 6px 16px; font-size: 1.2rem; font-weight: bold;">&#8592;</button>
+          <div style="display: flex; gap: 5px;">
+            <button id="btn-env-1d" class="btn-range active" onclick="setEnvRange('1D')">1D</button>
+            <button id="btn-env-7d" class="btn-range" onclick="setEnvRange('7D')">7D</button>
+          </div>
+        </div>
+        <div class="env-stats-bar">
+          T MIN: <span id="env-stat-tmin" class="env-stat-t">--</span> | 
+          T MAX: <span id="env-stat-tmax" class="env-stat-t">--</span> |
+          P MIN: <span id="env-stat-pmin" class="env-stat-p">--</span> |
+          P MAX: <span id="env-stat-pmax" class="env-stat-p">--</span>
+        </div>
+      </div>
+      <div class="canvas-container" style="position: relative; flex: 1; min-height: 100px; background: #000; border: 1px solid #222; border-radius: 4px;">
+        <canvas id="envChart"></canvas>
+      </div>
+      <div id="env-cursor-info-bar" style="background: #0d0d0d; border: 1px solid #222; border-radius: 4px; padding: 8px 14px; display: flex; justify-content: space-between; font-size: 0.9rem; color: var(--term-yellow); font-family: 'Courier New', Courier, monospace;">
+        <span>TEMP: <b id="env-cursor-t" style="color: #00ffff;">-- °C</b></span>
+        <span>CIŚN: <b id="env-cursor-p" style="color: #ffaa00;">-- hPa</b></span>
+        <span>CZAS: <b id="env-cursor-time" style="color: #fff;">--:--</b></span>
+      </div>
+    </div>
+    <!-- Pusty Panel dla pozostałych kart -->
+    <div class="panel-body" id="empty-panel-body" style="display: none;"></div>
+  </div>
+</div>
+
+<!-- Modal dla SETUP Import/Export -->
+<div id="setup-modal" class="modal-overlay" style="display: none;">
+  <div class="modal-content">
+    <h2 style="color: var(--term-yellow); text-align: center; margin-bottom: 20px; font-family: Arial;">KONFIGURACJA ZMIENNYCH</h2>
+    <div class="modal-body" id="setup-modal-body">
+      <!-- Zawartość generowana przez JS -->
+    </div>
+    <div class="modal-footer">
+       <button class="btn btn-off" onclick="closeSetupModal()" style="flex:1;">ANULUJ</button>
+       <button class="btn" style="flex:1; border-color: var(--term-cyan); color: var(--term-cyan);" onclick="document.getElementById('configFileInput').click()">POBIERZ</button>
+       <button class="btn btn-on" onclick="saveAndExportSetup()" style="flex:1;">ZAPISZ</button>
+    </div>
+  </div>
+</div>
+<!-- Modal dla LOGI -->
+<div id="logs-modal" class="modal-overlay" style="display: none;">
+  <div class="modal-content">
+    <h2 style="color: var(--term-yellow); text-align: center; margin-bottom: 20px; font-family: Arial;">ZDARZENIA KRYTYCZNE</h2>
+    <div class="modal-body" id="logs-modal-body" style="background: #000; border: 1px solid #333; border-radius: 6px; padding: 10px;">
+      <!-- Logi generowane przez JS -->
+    </div>
+    <div class="modal-footer" style="justify-content: center;">
+       <button class="btn btn-off" onclick="closeLogsModal()" style="width: 120px;">ZAMKNIJ</button>
+       <button class="btn" style="border-color: var(--term-yellow); color: var(--term-yellow); width: 120px;" onclick="clearSystemLogs()">CZYŚĆ</button>
+    </div>
+  </div>
+</div>
+<!-- Ukryte pole input do odczytu JSON -->
+<input type="file" id="configFileInput" accept=".json" style="display: none;" onchange="handleImportConfig(event)">
+
+<script>
+ // Konfiguracja urządzeń oraz pamięci danych
+ const devices = {
+    P: { enabled: true, name: "POMPA",    ip: "192.168.2.183", port: 8000, socket: null, start: false, hold: false, logs: [], watchdogTimer: null, hardResetTimer: null, reconnectTimer: null },
+    J: { enabled: true, name: "JACUZZI",  ip: "192.168.2.174", port: 8000, socket: null, start: false, hold: false, logs: [], watchdogTimer: null, hardResetTimer: null, reconnectTimer: null },
+    S: { enabled: true, name: "SIEC",     ip: "192.168.2.184", port: 8000, socket: null, start: false, hold: false, logs: [], watchdogTimer: null, hardResetTimer: null, reconnectTimer: null },
+    L: { enabled: true, name: "LICZNIK",  ip: "192.168.2.170", port: 8000, socket: null, start: false, hold: false, logs: [], watchdogTimer: null, hardResetTimer: null, reconnectTimer: null, v10History: [], isRecording: true },
+    C: { enabled: true, name: "CO-SALON", ip: "192.168.2.185", port: 8000, socket: null, start: false, hold: false, logs: [], watchdogTimer: null, hardResetTimer: null, reconnectTimer: null, mode: 'DAY', lowDay: 22.5, highDay: 23.0, lowNight: 20.0, highNight: 21.0, timeDay: "06:00", timeNight: "22:00", v11: null, prevV11: null, v12: null, stState: 'LOW' },
+    K: { enabled: true, name: "KOTY",     ip: "192.168.2.188", port: 8000, socket: null, start: false, hold: false, logs: [], watchdogTimer: null, hardResetTimer: null, reconnectTimer: null, mode: 'DAY', lowDay: 22.5, highDay: 23.0, lowNight: 20.0, highNight: 21.0, timeDay: "08:00", timeNight: "20:00", v11: null, prevV11: null, v12: null, stState: 'LOW', grzOnCode: "", grzOffCode: "" },
+    T: { enabled: true, name: "TEST",     ip: "192.168.2.180", port: 8000, socket: null, start: false, hold: false, logs: [], watchdogTimer: null, hardResetTimer: null, reconnectTimer: null }
+  };
+  
+  const jacuzziButtons = {
+    kdom:    { id: "j-btn-kdom",    onV: "V31", offV: "V32", fbV: "V33", state: "OFF" },
+    koty:    { id: "j-btn-koty",    onV: "V34", offV: "V35", fbV: "V36", state: "OFF" },
+    gwiazda: { id: "j-btn-gwiazda", onV: "V37", offV: "V38", fbV: "V39", state: "OFF" },
+    garaz:   { id: "j-btn-garaz",   onV: null,  offV: null,  fbV: null,  state: "OFF", disabled: true },
+    jacuzzi: { id: "j-btn-jacuzzi", onV: "V43", offV: "V44", fbV: "V45", state: "OFF" },
+    wolny:   { id: "j-btn-wolny",   onV: "V40", offV: "V41", fbV: "V42", state: "OFF" }
+  };
+
+  const jacuzziCodes = { won: "", woff: "", gon: "", goff: "", wodaState: "OFF", grzState: "OFF" };
+
+  const progButtons = [
+    { id: 0, opis: "TARAS",   esp: "S", onCode: "", offCode: "", state: "OFF" },
+    { id: 1, opis: "CHOINKA", esp: "S", onCode: "", offCode: "", state: "OFF" },
+    { id: 2, opis: "GWIAZDA", esp: "S", onCode: "", offCode: "", state: "OFF" },
+    { id: 3, opis: "SOPLE",   esp: "S", onCode: "", offCode: "", state: "OFF" },
+    { id: 4, opis: "PD1",     esp: "S", onCode: "", offCode: "", state: "OFF" },
+    { id: 5, opis: "PD2",     esp: "S", onCode: "", offCode: "", state: "OFF" },
+    { id: 6, opis: "PD3",     esp: "S", onCode: "", offCode: "", state: "OFF" },
+    { id: 7, opis: "PD4",     esp: "S", onCode: "", offCode: "", state: "OFF" },
+    { id: 8, opis: "PD5",     esp: "S", onCode: "", offCode: "", state: "OFF" }
+  ];
+const systemLogs = [];
+  function addSystemLog(type, msg) {
+    const now = new Date();
+    const timeStr = String(now.getHours()).padStart(2, '0') + ":" + String(now.getMinutes()).padStart(2, '0') + ":" + String(now.getSeconds()).padStart(2, '0');
+    systemLogs.unshift({ time: timeStr, type: type, msg: msg });
+    if (systemLogs.length > 100) systemLogs.pop();
+    
+    // Zmiana kropki na żółtą
+    const dot = document.getElementById('logi-notification-dot');
+    if (dot) { dot.classList.remove('green-dot'); dot.classList.add('yellow-dot'); }
+  }
+
+  function openLogsModal() {
+    // Reset kropki na zieloną
+    const dot = document.getElementById('logi-notification-dot');
+    if (dot) { dot.classList.remove('yellow-dot'); dot.classList.add('green-dot'); }
+
+    const mBody = document.getElementById('logs-modal-body');
+    if (systemLogs.length === 0) {
+      mBody.innerHTML = '<div style="color:#888; text-align:center; margin-top:20px;">Brak zarejestrowanych zdarzeń krytycznych.</div>';
+    } else {
+      mBody.innerHTML = systemLogs.map(l => `<div class="log-item"><span class="log-time">[${l.time}]</span><span class="log-${l.type}">${l.msg}</span></div>`).join('');
+    }
+    document.getElementById('logs-modal').style.display = 'flex';
+  }
+  function closeLogsModal() { document.getElementById('logs-modal').style.display = 'none'; }
+  function clearSystemLogs() { systemLogs.length = 0; openLogsModal(); }
+  
+ function loadSettings() {
+    const savedCo = localStorage.getItem('co_salon_settings');
+    if (savedCo) {
+      try {
+        const parsed = JSON.parse(savedCo);
+        if (parsed.mode) devices.C.mode = parsed.mode;
+        if (parsed.lowDay !== undefined) devices.C.lowDay = parsed.lowDay;
+        if (parsed.highDay !== undefined) devices.C.highDay = parsed.highDay;
+        if (parsed.lowNight !== undefined) devices.C.lowNight = parsed.lowNight;
+        if (parsed.highNight !== undefined) devices.C.highNight = parsed.highNight;
+        if (parsed.timeDay) devices.C.timeDay = parsed.timeDay;
+        if (parsed.timeNight) devices.C.timeNight = parsed.timeNight;
+      } catch (e) {}
+    }
+
+    const savedKoty = localStorage.getItem('koty_settings');
+    if (savedKoty) {
+      try {
+        const parsed = JSON.parse(savedKoty);
+        if (parsed.mode) devices.K.mode = parsed.mode;
+        if (parsed.lowDay !== undefined) devices.K.lowDay = parsed.lowDay;
+        if (parsed.highDay !== undefined) devices.K.highDay = parsed.highDay;
+        if (parsed.lowNight !== undefined) devices.K.lowNight = parsed.lowNight;
+        if (parsed.highNight !== undefined) devices.K.highNight = parsed.highNight;
+        if (parsed.timeDay) devices.K.timeDay = parsed.timeDay;
+        if (parsed.timeNight) devices.K.timeNight = parsed.timeNight;
+        if (parsed.grzOnCode !== undefined) devices.K.grzOnCode = parsed.grzOnCode;
+        if (parsed.grzOffCode !== undefined) devices.K.grzOffCode = parsed.grzOffCode;
+      } catch (e) {}
+    }
+
+    const savedJCodes = localStorage.getItem('jacuzzi_sub_codes');
+    if (savedJCodes) {
+      try {
+        const parsed = JSON.parse(savedJCodes);
+        if (parsed.won !== undefined) jacuzziCodes.won = parsed.won;
+        if (parsed.woff !== undefined) jacuzziCodes.woff = parsed.woff;
+        if (parsed.gon !== undefined) jacuzziCodes.gon = parsed.gon;
+        if (parsed.goff !== undefined) jacuzziCodes.goff = parsed.goff;
+        if (parsed.wodaState !== undefined) jacuzziCodes.wodaState = parsed.wodaState;
+        if (parsed.grzState !== undefined) jacuzziCodes.grzState = parsed.grzState;
+      } catch (e) {}
+    }
+
+    const savedProg = localStorage.getItem('siec_prog_buttons');
+    if (savedProg) {
+      try {
+        const parsed = JSON.parse(savedProg);
+        parsed.forEach((importedBtn, idx) => {
+           if (progButtons[idx]) {
+              progButtons[idx].opis = importedBtn.opis || progButtons[idx].opis;
+              progButtons[idx].esp = importedBtn.esp || progButtons[idx].esp;
+              progButtons[idx].onCode = importedBtn.onCode || "";
+              progButtons[idx].offCode = importedBtn.offCode || "";
+              progButtons[idx].state = importedBtn.state || "OFF";
+           }
+        });
+      } catch (e) {}
+    }
+	const savedESPStates = localStorage.getItem('esp_active_states');
+    if (savedESPStates) {
+      try {
+        const parsed = JSON.parse(savedESPStates);
+        Object.keys(parsed).forEach(k => {
+           if (devices[k]) devices[k].enabled = parsed[k];
+        });
+      } catch (e) {}
+    }
+  }
+
+  function saveJacuzziCodes() { localStorage.setItem('jacuzzi_sub_codes', JSON.stringify(jacuzziCodes)); }
+  function saveSiecCodes() { localStorage.setItem('siec_prog_buttons', JSON.stringify(progButtons)); }
+
+  function saveCoSettings() {
+    const dataToSave = {
+      mode: devices.C.mode, lowDay: devices.C.lowDay, highDay: devices.C.highDay,
+      lowNight: devices.C.lowNight, highNight: devices.C.highNight,
+      timeDay: devices.C.timeDay, timeNight: devices.C.timeNight
+    };
+    localStorage.setItem('co_salon_settings', JSON.stringify(dataToSave));
+  }
+  
+  function saveKotySettings() {
+    const dataToSave = {
+      mode: devices.K.mode, lowDay: devices.K.lowDay, highDay: devices.K.highDay,
+      lowNight: devices.K.lowNight, highNight: devices.K.highNight,
+      timeDay: devices.K.timeDay, timeNight: devices.K.timeNight,
+      grzOnCode: devices.K.grzOnCode, grzOffCode: devices.K.grzOffCode
+    };
+    localStorage.setItem('koty_settings', JSON.stringify(dataToSave));
+  }
+
+  function updateScheduleTime() {
+    const tDay = document.getElementById('sched-time-day').value;
+    const tNight = document.getElementById('sched-time-night').value;
+    devices.C.timeDay = tDay; devices.C.timeNight = tNight;
+    saveCoSettings();
+    printToDevice('C', `[C] Zaktualizowano harmonogram: Dzień od ${tDay}, Noc od ${tNight}`, "info");
+    sendPayloadKey('C', `{"TIME_DAY":"${tDay}","TIME_NIGHT":"${tNight}"}`);
+  }
+  
+  function updateKotyScheduleTime() {
+    const tDay = document.getElementById('sched-k-time-day').value;
+    const tNight = document.getElementById('sched-k-time-night').value;
+    devices.K.timeDay = tDay; devices.K.timeNight = tNight;
+    saveKotySettings();
+    printToDevice('K', `[K] Zaktualizowano harmonogram KOTY: Dzień od ${tDay}, Noc od ${tNight}`, "info");
+    sendPayloadKey('K', `{"TIME_DAY":"${tDay}","TIME_NIGHT":"${tNight}"}`);
+  }
+
+  const trendStates = {};
+  const SVG_TREND_UP   = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="12,1 3,22 21,22"/></svg>`;
+  const SVG_TREND_DOWN = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="12,23 3,2 21,2"/></svg>`;
+  const SVG_TREND_FLAT = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="10" width="18" height="4" rx="2"/></svg>`;
+
+  function updateTrend(trendId, rawVal) {
+    const num = parseFloat(rawVal);
+    if (isNaN(num)) return;
+
+    const el = document.getElementById(trendId);
+    if (!el) return;
+
+    if (!trendStates[trendId]) {
+      trendStates[trendId] = { ref: num, type: 'FLAT', color: '#888' };
+    } else {
+      const st = trendStates[trendId];
+      const diff = num - st.ref;
+      if (diff >= 1.0) { st.type = 'UP'; st.color = '#ff3333'; st.ref = num; } 
+      else if (diff <= -1.0) { st.type = 'DOWN'; st.color = '#0088ff'; st.ref = num; }
+    }
+
+    const currentSt = trendStates[trendId];
+    if (currentSt.type === 'UP') el.innerHTML = SVG_TREND_UP;
+    else if (currentSt.type === 'DOWN') el.innerHTML = SVG_TREND_DOWN;
+    else el.innerHTML = SVG_TREND_FLAT;
+    el.style.color = currentSt.color;
+  }
+
+  let activeTab = 'P';
+  let isChartVisible = false;
+  let isTerminalHidden = false;
+
+  const termSection      = document.getElementById('terminal-section');
+  const term             = document.getElementById('terminal');
+  const input            = document.getElementById('inputline');
+  const led              = document.getElementById('status-led');
+  const ledStatusText    = document.getElementById('led-status-text');
+  const chkStart         = document.getElementById('chk-start');
+  const chkHold          = document.getElementById('chk-hold');
+  const chkHideTerm      = document.getElementById('chk-hide-term');
+
+  const wsUrlDisplay     = document.getElementById('ws-url-display');
+  const headerNameDisplay= document.getElementById('header-name-display');
+
+  const pompaPanelBody   = document.getElementById('pompa-panel-body');
+  const jacuzziPanelBody = document.getElementById('jacuzzi-panel-body');
+  const siecPanelBody    = document.getElementById('siec-panel-body');
+  const coPanelBody      = document.getElementById('co-panel-body');
+  const kotyPanelBody    = document.getElementById('koty-panel-body');
+  const licznikPanelBody = document.getElementById('licznik-panel-body');
+  const chartPanelBody   = document.getElementById('chart-panel-body');
+  const emptyPanelBody   = document.getElementById('empty-panel-body');
+  const stIndicator      = document.getElementById('st-indicator');
+  const stKIndicator     = document.getElementById('st-k-indicator');
+
+  const canvas           = document.getElementById('v10Chart');
+  const ctx              = canvas.getContext('2d');
+  const slider           = document.getElementById('windowSlider');
+  const txtRange         = document.getElementById('window-range-txt');
+  const chkAutoScroll    = document.getElementById('chkAutoScroll');
+  const statMin          = document.getElementById('stat-min');
+  const statMax          = document.getElementById('stat-max');
+  const statAvg          = document.getElementById('stat-avg');
+  const cursorVal        = document.getElementById('cursor-val');
+  const cursorTime       = document.getElementById('cursor-time');
+  const cursorIdx        = document.getElementById('cursor-idx');
+
+  const WINDOW_SIZE = 100;
+  let hoverIdxInWindow = -1;
+
+  /* MODAL ZARZĄDZANIE - POCZĄTEK */
+
+  function openSetupModal() {
+    const mBody = document.getElementById('setup-modal-body');
+    let html = '';
+    
+    function makeGroup(title, fields) {
+      let res = `<div class="setup-group"><h3>${title}</h3>`;
+      fields.forEach(f => {
+        res += `<div class="setup-row"><label>${f.l}</label><input type="text" id="${f.i}" value="${f.v}"></div>`;
+      });
+      res += `</div>`;
+      return res;
+    }
+
+    // NOWA SEKCJA: Checkboxy aktywności urządzeń ESP
+    html += `<div class="setup-group" style="text-align: center;"><h3>AKTYWNE MODUŁY ESP</h3>`;
+    html += `<div style="display: flex; justify-content: center; gap: 15px; flex-wrap: wrap;">`;
+    Object.keys(devices).forEach(k => {
+      const isChecked = devices[k].enabled ? 'checked' : '';
+      html += `
+        <label class="checkbox-container" style="flex-direction: row; color: var(--term-yellow);">
+          <input type="checkbox" id="cfg-esp-${k}" ${isChecked}>
+          <span class="custom-box"></span>
+          ${k}
+        </label>`;
+    });
+    html += `</div></div>`;
+
+    html += makeGroup('CO-SALON', [
+      { l: 'Tryb (DAY/NIGHT)', i: 'cfg-c-mode', v: devices.C.mode },
+      { l: 'LOW Dzień', i: 'cfg-c-ld', v: devices.C.lowDay },
+      { l: 'HIGH Dzień', i: 'cfg-c-hd', v: devices.C.highDay },
+      { l: 'LOW Noc', i: 'cfg-c-ln', v: devices.C.lowNight },
+      { l: 'HIGH Noc', i: 'cfg-c-hn', v: devices.C.highNight },
+      { l: 'Dzień od (HH:MM)', i: 'cfg-c-td', v: devices.C.timeDay },
+      { l: 'Noc od (HH:MM)', i: 'cfg-c-tn', v: devices.C.timeNight }
+    ]);
+
+    html += makeGroup('KOTY', [
+      { l: 'Tryb (DAY/NIGHT)', i: 'cfg-k-mode', v: devices.K.mode },
+      { l: 'LOW Dzień', i: 'cfg-k-ld', v: devices.K.lowDay },
+      { l: 'HIGH Dzień', i: 'cfg-k-hd', v: devices.K.highDay },
+      { l: 'LOW Noc', i: 'cfg-k-ln', v: devices.K.lowNight },
+      { l: 'HIGH Noc', i: 'cfg-k-hn', v: devices.K.highNight },
+      { l: 'Dzień od (HH:MM)', i: 'cfg-k-td', v: devices.K.timeDay },
+      { l: 'Noc od (HH:MM)', i: 'cfg-k-tn', v: devices.K.timeNight },
+      { l: 'Grzanie ON KOD', i: 'cfg-k-gon', v: devices.K.grzOnCode },
+      { l: 'Grzanie OFF KOD', i: 'cfg-k-goff', v: devices.K.grzOffCode }
+    ]);
+
+    html += makeGroup('JACUZZI KODY', [
+      { l: 'WODA ON', i: 'cfg-j-won', v: jacuzziCodes.won },
+      { l: 'WODA OFF', i: 'cfg-j-woff', v: jacuzziCodes.woff },
+      { l: 'GRZEJNIK ON', i: 'cfg-j-gon', v: jacuzziCodes.gon },
+      { l: 'GRZEJNIK OFF', i: 'cfg-j-goff', v: jacuzziCodes.goff }
+    ]);
+
+    // Dynamiczne generowanie dla nowych i starych przycisków programowalnych
+    progButtons.forEach((btnObj, idx) => {
+       const title = idx < 4 ? `KARTA SIEĆ - GŁÓWNY #${idx+1}` : `KARTA SIEĆ - PRZYCISK DODATKOWY #${idx-3}`;
+       html += makeGroup(title, [
+         { l: 'OPIS', i: `cfg-prog${idx}-opis`, v: btnObj.opis },
+         { l: 'ESP (P,J,S,L,C,K,T)', i: `cfg-prog${idx}-esp`, v: btnObj.esp },
+         { l: 'ON KOD (do V9)', i: `cfg-prog${idx}-on`, v: btnObj.onCode },
+         { l: 'OFF KOD (do V9)', i: `cfg-prog${idx}-off`, v: btnObj.offCode }
+       ]);
+    });
+
+    mBody.innerHTML = html;
+    document.getElementById('setup-modal').style.display = 'flex';
+  }
+ function closeSetupModal() {
+    document.getElementById('setup-modal').style.display = 'none';
+  }
+
+  function saveAndExportSetup() {
+    // Odczyt statusu aktywności modułów ESP
+    Object.keys(devices).forEach(k => {
+      const chk = document.getElementById(`cfg-esp-${k}`);
+      if (chk) {
+        const wasEnabled = devices[k].enabled;
+        devices[k].enabled = chk.checked;
+        
+        // Reagowanie na zmianę stanu (rozłącz / połącz w tle)
+        if (wasEnabled && !chk.checked && devices[k].socket) {
+           devices[k].socket.onclose = null; // Blokada automatycznego wznawiania
+           devices[k].socket.close();
+           updateV0State(k, 0); // Pokaż jako zgaszony/szary
+           printToDevice(k, `[SYSTEM] ESP (${k}) celowo wyłączony w konfiguracji.`, "info");
+        } else if (!wasEnabled && chk.checked) {
+           connectDevice(k);
+        }
+      }
+    });
+    
+    // Zapis stanu do localStorage (nowa zmienna systemowa)
+    const activeStates = {};
+    Object.keys(devices).forEach(k => activeStates[k] = devices[k].enabled);
+    localStorage.setItem('esp_active_states', JSON.stringify(activeStates));
+
+    devices.C.mode = document.getElementById('cfg-c-mode').value;
+    devices.C.lowDay = parseFloat(document.getElementById('cfg-c-ld').value) || 22.5;
+    devices.C.highDay = parseFloat(document.getElementById('cfg-c-hd').value) || 23.0;
+    devices.C.lowNight = parseFloat(document.getElementById('cfg-c-ln').value) || 20.0;
+    devices.C.highNight = parseFloat(document.getElementById('cfg-c-hn').value) || 21.0;
+    devices.C.timeDay = document.getElementById('cfg-c-td').value;
+    devices.C.timeNight = document.getElementById('cfg-c-tn').value;
+    
+    devices.K.mode = document.getElementById('cfg-k-mode').value;
+    devices.K.lowDay = parseFloat(document.getElementById('cfg-k-ld').value) || 22.5;
+    devices.K.highDay = parseFloat(document.getElementById('cfg-k-hd').value) || 23.0;
+    devices.K.lowNight = parseFloat(document.getElementById('cfg-k-ln').value) || 20.0;
+    devices.K.highNight = parseFloat(document.getElementById('cfg-k-hn').value) || 21.0;
+    devices.K.timeDay = document.getElementById('cfg-k-td').value;
+    devices.K.timeNight = document.getElementById('cfg-k-tn').value;
+    devices.K.grzOnCode = document.getElementById('cfg-k-gon').value;
+    devices.K.grzOffCode = document.getElementById('cfg-k-goff').value;
+
+    jacuzziCodes.won = document.getElementById('cfg-j-won').value;
+    jacuzziCodes.woff = document.getElementById('cfg-j-woff').value;
+    jacuzziCodes.gon = document.getElementById('cfg-j-gon').value;
+    jacuzziCodes.goff = document.getElementById('cfg-j-goff').value;
+
+    progButtons.forEach((btnObj, idx) => {
+       btnObj.opis = document.getElementById(`cfg-prog${idx}-opis`).value;
+       btnObj.esp = document.getElementById(`cfg-prog${idx}-esp`).value.toUpperCase();
+       btnObj.onCode = document.getElementById(`cfg-prog${idx}-on`).value;
+       btnObj.offCode = document.getElementById(`cfg-prog${idx}-off`).value;
+    });
+
+    saveCoSettings();
+    saveKotySettings();
+    saveJacuzziCodes();
+    saveSiecCodes();
+
+    const config = {
+      esp_active_states: activeStates,
+      co_salon: {
+        mode: devices.C.mode, lowDay: devices.C.lowDay, highDay: devices.C.highDay,
+        lowNight: devices.C.lowNight, highNight: devices.C.highNight,
+        timeDay: devices.C.timeDay, timeNight: devices.C.timeNight
+      },
+      koty: {
+        mode: devices.K.mode, lowDay: devices.K.lowDay, highDay: devices.K.highDay,
+        lowNight: devices.K.lowNight, highNight: devices.K.highNight,
+        timeDay: devices.K.timeDay, timeNight: devices.K.timeNight,
+        grzOnCode: devices.K.grzOnCode, grzOffCode: devices.K.grzOffCode
+      },
+      jacuzzi_codes: jacuzziCodes,
+      prog_buttons: progButtons
+    };
+    
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(config, null, 2));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    
+    const now = new Date();
+    const dateStr = now.getFullYear() + "-" + 
+                    String(now.getMonth() + 1).padStart(2, '0') + "-" + 
+                    String(now.getDate()).padStart(2, '0') + "_" + 
+                    String(now.getHours()).padStart(2, '0') + "-" + 
+                    String(now.getMinutes()).padStart(2, '0');
+                    
+    downloadAnchorNode.setAttribute("download", `config_${dateStr}.json`);
+    document.body.appendChild(downloadAnchorNode); 
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+
+    updateCoSalonUI();
+    updateKotyUI();
+    updateJacuzziUI();
+    updateSiecUI();
+    closeSetupModal();
+  }
+
+  function handleImportConfig(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const json = JSON.parse(e.target.result);
+        
+        if (json.esp_active_states) {
+          Object.keys(json.esp_active_states).forEach(k => {
+             if (devices[k]) devices[k].enabled = json.esp_active_states[k];
+          });
+          localStorage.setItem('esp_active_states', JSON.stringify(json.esp_active_states));
+        }
+        
+        if (json.co_salon) {
+          if(json.co_salon.mode !== undefined) devices.C.mode = json.co_salon.mode;
+          if(json.co_salon.lowDay !== undefined) devices.C.lowDay = Number(json.co_salon.lowDay);
+          if(json.co_salon.highDay !== undefined) devices.C.highDay = Number(json.co_salon.highDay);
+          if(json.co_salon.lowNight !== undefined) devices.C.lowNight = Number(json.co_salon.lowNight);
+          if(json.co_salon.highNight !== undefined) devices.C.highNight = Number(json.co_salon.highNight);
+          if(json.co_salon.timeDay !== undefined) devices.C.timeDay = json.co_salon.timeDay;
+          if(json.co_salon.timeNight !== undefined) devices.C.timeNight = json.co_salon.timeNight;
+          saveCoSettings();
+        }
+        
+        if (json.koty) {
+          if(json.koty.mode !== undefined) devices.K.mode = json.koty.mode;
+          if(json.koty.lowDay !== undefined) devices.K.lowDay = Number(json.koty.lowDay);
+          if(json.koty.highDay !== undefined) devices.K.highDay = Number(json.koty.highDay);
+          if(json.koty.lowNight !== undefined) devices.K.lowNight = Number(json.koty.lowNight);
+          if(json.koty.highNight !== undefined) devices.K.highNight = Number(json.koty.highNight);
+          if(json.koty.timeDay !== undefined) devices.K.timeDay = json.koty.timeDay;
+          if(json.koty.timeNight !== undefined) devices.K.timeNight = json.koty.timeNight;
+          if(json.koty.grzOnCode !== undefined) devices.K.grzOnCode = json.koty.grzOnCode;
+          if(json.koty.grzOffCode !== undefined) devices.K.grzOffCode = json.koty.grzOffCode;
+          saveKotySettings();
+        }
+        
+        if (json.jacuzzi_codes) { 
+           Object.assign(jacuzziCodes, json.jacuzzi_codes);
+           saveJacuzziCodes();
+        }
+        
+        if (json.prog_buttons) {
+           json.prog_buttons.forEach((importedBtn, idx) => {
+             if (progButtons[idx]) {
+                progButtons[idx].opis = importedBtn.opis || progButtons[idx].opis;
+                progButtons[idx].esp = importedBtn.esp || progButtons[idx].esp;
+                progButtons[idx].onCode = importedBtn.onCode || "";
+                progButtons[idx].offCode = importedBtn.offCode || "";
+                if(importedBtn.state) progButtons[idx].state = importedBtn.state;
+             }
+           });
+           saveSiecCodes();
+        }
+        
+        updateCoSalonUI(); updateKotyUI(); updateJacuzziUI(); updateSiecUI();
+        
+        if(document.getElementById('setup-modal').style.display === 'flex') {
+           openSetupModal(); 
+        }
+        printToDevice(activeTab, "[SYSTEM] Pomyślnie zaimportowano plik konfiguracji.", "info");
+      } catch(err) {
+        alert("Błąd podczas parsowania pliku konfiguracyjnego.");
+        printToDevice(activeTab, "[BŁĄD] Uszkodzony plik konfiguracyjny JSON.", "info");
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = "";
+  }
+  function handleImportConfig(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const json = JSON.parse(e.target.result);
+        
+        if (json.co_salon) {
+          if(json.co_salon.mode !== undefined) devices.C.mode = json.co_salon.mode;
+          if(json.co_salon.lowDay !== undefined) devices.C.lowDay = Number(json.co_salon.lowDay);
+          if(json.co_salon.highDay !== undefined) devices.C.highDay = Number(json.co_salon.highDay);
+          if(json.co_salon.lowNight !== undefined) devices.C.lowNight = Number(json.co_salon.lowNight);
+          if(json.co_salon.highNight !== undefined) devices.C.highNight = Number(json.co_salon.highNight);
+          if(json.co_salon.timeDay !== undefined) devices.C.timeDay = json.co_salon.timeDay;
+          if(json.co_salon.timeNight !== undefined) devices.C.timeNight = json.co_salon.timeNight;
+          saveCoSettings();
+        }
+        
+        if (json.koty) {
+          if(json.koty.mode !== undefined) devices.K.mode = json.koty.mode;
+          if(json.koty.lowDay !== undefined) devices.K.lowDay = Number(json.koty.lowDay);
+          if(json.koty.highDay !== undefined) devices.K.highDay = Number(json.koty.highDay);
+          if(json.koty.lowNight !== undefined) devices.K.lowNight = Number(json.koty.lowNight);
+          if(json.koty.highNight !== undefined) devices.K.highNight = Number(json.koty.highNight);
+          if(json.koty.timeDay !== undefined) devices.K.timeDay = json.koty.timeDay;
+          if(json.koty.timeNight !== undefined) devices.K.timeNight = json.koty.timeNight;
+          if(json.koty.grzOnCode !== undefined) devices.K.grzOnCode = json.koty.grzOnCode;
+          if(json.koty.grzOffCode !== undefined) devices.K.grzOffCode = json.koty.grzOffCode;
+          saveKotySettings();
+        }
+        
+        if (json.jacuzzi_codes) { 
+           Object.assign(jacuzziCodes, json.jacuzzi_codes);
+           saveJacuzziCodes();
+        }
+        
+        if (json.prog_buttons) {
+           json.prog_buttons.forEach((importedBtn, idx) => {
+             if (progButtons[idx]) {
+                progButtons[idx].opis = importedBtn.opis || progButtons[idx].opis;
+                progButtons[idx].esp = importedBtn.esp || progButtons[idx].esp;
+                progButtons[idx].onCode = importedBtn.onCode || "";
+                progButtons[idx].offCode = importedBtn.offCode || "";
+                if(importedBtn.state) progButtons[idx].state = importedBtn.state;
+             }
+           });
+           saveSiecCodes();
+        }
+        
+        updateCoSalonUI(); updateKotyUI(); updateJacuzziUI(); updateSiecUI();
+        
+        if(document.getElementById('setup-modal').style.display === 'flex') {
+           openSetupModal(); 
+        }
+        printToDevice(activeTab, "[SYSTEM] Pomyślnie zaimportowano plik konfiguracji.", "info");
+      } catch(err) {
+        alert("Błąd podczas parsowania pliku konfiguracyjnego.");
+        printToDevice(activeTab, "[BŁĄD] Uszkodzony plik konfiguracyjny JSON.", "info");
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = "";
+  
+  }
+  /* MODAL ZARZĄDZANIE - KONIEC */
+
+  function toggleFullscreen() {
+    if (!document.fullscreenElement && !document.webkitFullscreenElement && !document.msFullscreenElement) {
+      const elem = document.documentElement;
+      if (elem.requestFullscreen) elem.requestFullscreen();
+      else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
+      else if (elem.msRequestFullscreen) elem.msRequestFullscreen();
+    } else {
+      if (document.exitFullscreen) document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      else if (document.msExitFullscreen) document.msExitFullscreen();
+    }
+  }
+
+  function updateFullscreenIcon() {
+    const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement);
+    const iconExpand = document.getElementById('fs-icon-expand');
+    const iconCompress = document.getElementById('fs-icon-compress');
+    if (iconExpand && iconCompress) {
+      iconExpand.style.display = isFS ? 'none' : 'block';
+      iconCompress.style.display = isFS ? 'block' : 'none';
+    }
+  }
+
+  document.addEventListener('fullscreenchange', updateFullscreenIcon);
+  document.addEventListener('webkitfullscreenchange', updateFullscreenIcon);
+  document.addEventListener('msfullscreenchange', updateFullscreenIcon);
+
+  function getAQIStyle(val) {
+    const num = parseFloat(val);
+    if (isNaN(num)) return { bg: '#ffffa0', color: '#000' };
+    if (num < 100)  return { bg: '#28a745', color: '#fff' };
+    if (num <= 500) return { bg: '#ffeb3b', color: '#000' };
+    if (num <= 1000) return { bg: '#ff9800', color: '#000' };
+    if (num <= 1500) return { bg: '#f44336', color: '#fff' };
+    return { bg: '#9c27b0', color: '#fff' };
+  }
+
+  function updateAQIDisplay(id, value) {
+    const box = document.getElementById('box-' + id);
+    const span = document.getElementById('val-' + id);
+    if (!box || !span) return;
+    span.innerText = value;
+    const style = getAQIStyle(value);
+    box.style.backgroundColor = style.bg;
+    box.style.color = style.color;
+  }
+
+function updateSiecVal(varName, val) {
+    const num = parseFloat(val);
+    if (varName === 'V11') {
+      const formatted = isNaN(num) ? val : num.toFixed(1) + '°C';
+      const elP = document.getElementById('val-p-s-V11');
+      if (elP) elP.innerText = formatted;
+      if (!isNaN(num)) updateTrend('trend-p-s-V11', num);
+    }
+    if (varName === 'V12') {
+      const formatted = isNaN(num) ? val : Math.round(num) + '%';
+      const elP = document.getElementById('val-p-s-V12');
+      if (elP) elP.innerText = formatted;
+      if (!isNaN(num)) updateTrend('trend-p-s-V12', num);
+    }
+  }
+
+  function generateMockData() {
+    let basePower = 400;
+    const now = Date.now();
+    for (let i = 0; i < 1000; i++) {
+      if (i % 120 === 0) basePower = Math.floor(Math.random() * 2000) + 200;
+      let noise = (Math.random() - 0.5) * 80;
+      let val = Math.max(0, Math.round((basePower + noise) * 2));
+      let sampleTime = new Date(now - (1000 - i) * 3000);
+      let timeStr = sampleTime.toTimeString().split(' ')[0];
+      devices.L.v10History.push({ val, time: timeStr });
+    }
+  }
+
+  function downloadCSV() {
+    const history = devices.L.v10History;
+    if (!history || history.length === 0) {
+      printToDevice('L', '[L] Brak danych w pamięci do wyeksportowania!', 'info');
+      return;
+    }
+    let csvContent = "data:text/csv;charset=utf-8,Probka;Czas;Moc_W\n";
+    history.forEach((item, index) => {
+      csvContent += `${index + 1};${item.time};${item.val}\n`;
+    });
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `Licznik_V10_Historia_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  function showChartCard() {
+    isChartVisible = true;
+    licznikPanelBody.style.display = 'none';
+    chartPanelBody.style.display   = 'flex';
+    
+    // Ukrywanie przycisków globalnych dla czystego widoku wykresu
+    const testWidget = document.getElementById('card-test-widget');
+    const fsButton = document.getElementById('btn-fullscreen');
+    if (testWidget) testWidget.style.display = 'none';
+    if (fsButton) fsButton.style.display = 'none';
+
+    const maxOffset = Math.max(0, devices.L.v10History.length - WINDOW_SIZE);
+    slider.max = maxOffset;
+    if (chkAutoScroll.checked) slider.value = maxOffset;
+    setTimeout(resizeCanvas, 50);
+  }
+
+  function hideChartCard() {
+    isChartVisible = false;
+    chartPanelBody.style.display   = 'none';
+    licznikPanelBody.style.display = 'flex';
+    
+    // Przywracanie przycisków globalnych po wyjściu z wykresu
+    const testWidget = document.getElementById('card-test-widget');
+    const fsButton = document.getElementById('btn-fullscreen');
+    if (testWidget) testWidget.style.display = 'flex';
+    if (fsButton) fsButton.style.display = 'flex';
+  }
+
+  function toggleV10Recording() {
+    devices.L.isRecording = !devices.L.isRecording;
+    const btn = document.getElementById('btn-toggle-rec');
+    if (devices.L.isRecording) {
+      btn.innerText = '■ STOP';
+      btn.style.borderColor = 'var(--term-red)';
+      btn.style.color       = 'var(--term-red)';
+    } else {
+      btn.innerText = '▶ START';
+      btn.style.borderColor = 'var(--term-green)';
+      btn.style.color       = 'var(--term-green)';
+    }
+  }
+
+  function clearV10History() {
+    devices.L.v10History = [];
+    slider.max = 0; slider.value = 0;
+    statMin.innerText = "0"; statMax.innerText = "0"; statAvg.innerText = "0";
+    cursorVal.innerText = "-- W"; cursorTime.innerText = "--:--:--"; cursorIdx.innerText = "#--";
+    if (isChartVisible) drawChart();
+    printToDevice('L', '[L] Wyczyszczono całą historię wykresu V10.', 'info');
+  }
+
+  function pushNewV10(valNum, timeStr) {
+    devices.L.v10History.push({ val: valNum, time: timeStr });
+    if (devices.L.v10History.length > 1000) devices.L.v10History.shift();
+    const maxOffset = Math.max(0, devices.L.v10History.length - WINDOW_SIZE);
+    slider.max = maxOffset;
+    if (chkAutoScroll.checked) slider.value = maxOffset;
+    if (isChartVisible) drawChart();
+  }
+
+  function resizeCanvas() {
+    if (!isChartVisible) return;
+    const parent = canvas.parentElement;
+    if (!parent) return;
+    canvas.width = parent.clientWidth;
+    canvas.height = parent.clientHeight;
+    drawChart();
+  }
+
+  function drawChart() {
+    if (!isChartVisible) return;
+    const w = canvas.width; const h = canvas.height;
+    if (w === 0 || h === 0) return;
+
+    const paddingLeft = 55; const paddingBottom = 30;
+    const chartW = w - paddingLeft - 20; const chartH = h - paddingBottom - 20;
+
+    ctx.clearRect(0, 0, w, h);
+    const history = devices.L.v10History;
+    const offset = parseInt(slider.value) || 0;
+    const windowData = history.slice(offset, offset + WINDOW_SIZE);
+    txtRange.innerText = `${offset + (windowData.length > 0 ? 1 : 0)} - ${offset + windowData.length}`;
+    if (windowData.length === 0) return;
+
+    const values = windowData.map(d => d.val);
+    const minVal = Math.min(...values); const maxVal = Math.max(...values);
+    const avgVal = Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+    statMin.innerText = minVal; statMax.innerText = maxVal; statAvg.innerText = avgVal;
+
+    const yMin = 0; const yMax = Math.ceil((maxVal * 1.1) / 100) * 100 || 500;
+
+    ctx.strokeStyle = '#1e1e1e'; ctx.lineWidth = 1; ctx.fillStyle = '#666'; ctx.font = '11px Arial';
+    const gridLines = 4;
+    for (let i = 0; i <= gridLines; i++) {
+      const yVal = yMin + (yMax - yMin) * (i / gridLines);
+      const yPos = h - paddingBottom - (i / gridLines) * chartH;
+      ctx.beginPath(); ctx.moveTo(paddingLeft, yPos); ctx.lineTo(w - 20, yPos); ctx.stroke();
+      ctx.fillText(`${Math.round(yVal)}W`, 5, yPos + 4);
+    }
+
+    ctx.beginPath(); ctx.strokeStyle = '#00ffff'; ctx.lineWidth = 2;
+    ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 8;
+    windowData.forEach((item, idx) => {
+      const x = paddingLeft + (idx / (WINDOW_SIZE - 1)) * chartW;
+      const y = h - paddingBottom - ((item.val - yMin) / (yMax - yMin)) * chartH;
+      if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke(); ctx.shadowBlur = 0;
+
+    if (document.getElementById('chkSMA') && document.getElementById('chkSMA').checked) {
+      ctx.beginPath(); ctx.strokeStyle = '#ffaa00'; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+      windowData.forEach((item, idx) => {
+        const absIdx = offset + idx; const startIdx = Math.max(0, absIdx - 9);
+        const slice = history.slice(startIdx, absIdx + 1);
+        const smaVal = slice.reduce((acc, curr) => acc + curr.val, 0) / slice.length;
+        const x = paddingLeft + (idx / (WINDOW_SIZE - 1)) * chartW;
+        const y = h - paddingBottom - ((smaVal - yMin) / (yMax - yMin)) * chartH;
+        if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke(); ctx.setLineDash([]);
+    }
+
+    ctx.fillStyle = '#888';
+    ctx.fillText(`#${offset + 1}`, paddingLeft, h - 8);
+    ctx.fillText(`#${offset + Math.floor(WINDOW_SIZE / 2)}`, paddingLeft + chartW / 2 - 15, h - 8);
+    ctx.fillText(`#${offset + windowData.length}`, paddingLeft + chartW - 25, h - 8);
+
+    if (hoverIdxInWindow >= 0 && hoverIdxInWindow < windowData.length) {
+      const item = windowData[hoverIdxInWindow];
+      const hX = paddingLeft + (hoverIdxInWindow / (WINDOW_SIZE - 1)) * chartW;
+      const hY = h - paddingBottom - ((item.val - yMin) / (yMax - yMin)) * chartH;
+
+      ctx.beginPath(); ctx.setLineDash([4, 4]); ctx.strokeStyle = '#ffff00'; ctx.lineWidth = 1.5;
+      ctx.moveTo(hX, 10); ctx.lineTo(hX, h - paddingBottom); ctx.stroke(); ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(hX, hY, 6, 0, Math.PI * 2); ctx.fillStyle = '#ffff00';
+      ctx.shadowColor = '#ffff00'; ctx.shadowBlur = 12; ctx.fill(); ctx.shadowBlur = 0;
+
+      cursorVal.innerText = item.val + ' W'; cursorTime.innerText = item.time;
+      cursorIdx.innerText = '#' + (offset + hoverIdxInWindow + 1);
+    } else {
+      cursorVal.innerText = '-- W'; cursorTime.innerText = '--:--:--'; cursorIdx.innerText = '#--';
+    }
+  }
+
+  function handleCanvasPointer(e) {
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const x = clientX - rect.left;
+    const paddingLeft = 55; const chartW = canvas.width - paddingLeft - 20;
+
+    if (x < paddingLeft || x > canvas.width - 20) hoverIdxInWindow = -1;
+    else {
+      const relX = x - paddingLeft;
+      hoverIdxInWindow = Math.round((relX / chartW) * (WINDOW_SIZE - 1));
+      hoverIdxInWindow = Math.max(0, Math.min(WINDOW_SIZE - 1, hoverIdxInWindow));
+    }
+    drawChart();
+  }
+
+  canvas.addEventListener('mousemove', handleCanvasPointer);
+  canvas.addEventListener('click', handleCanvasPointer);
+  canvas.addEventListener('touchstart', (e) => { handleCanvasPointer(e); }, { passive: true });
+  canvas.addEventListener('touchmove', (e) => { handleCanvasPointer(e); }, { passive: true });
+  canvas.addEventListener('mouseleave', () => { hoverIdxInWindow = -1; drawChart(); });
+
+  slider.addEventListener('input', () => {
+    if (parseInt(slider.value) < parseInt(slider.max)) chkAutoScroll.checked = false;
+    drawChart();
+  });
+
+  function toggleTerminalHide() {
+    isTerminalHidden = chkHideTerm.checked;
+    if (isTerminalHidden) {
+      termSection.classList.add('hidden');
+      term.style.display = 'none';
+      input.style.display = 'none';
+    } else {
+      termSection.classList.remove('hidden');
+      term.style.display = 'block';
+      input.style.display = 'block';
+      if (!devices[activeTab].hold) {
+        term.scrollTop = term.scrollHeight;
+      }
+    }
+    setTimeout(() => { if(isChartVisible) resizeCanvas(); }, 300);
+  }
+
+  function printToDevice(key, txt, klasa = "") {
+    const dev = devices[key];
+    if (dev.start) {
+      dev.logs.push({ txt, klasa });
+      if (dev.logs.length > 1000) dev.logs.shift();
+    }
+    if (key === activeTab && dev.start && !isTerminalHidden) {
+      const line = document.createElement('span'); line.className = klasa;
+      line.innerHTML = txt + "<br>"; term.appendChild(line);
+      if (term.children.length > 1000) term.firstElementChild.remove();
+      if (!dev.hold) term.scrollTop = term.scrollHeight;
+    }
+  }
+
+  function renderTerminal() {
+    term.innerHTML = '';
+    const dev = devices[activeTab];
+    dev.logs.forEach(log => {
+      const line = document.createElement('span'); line.className = log.klasa;
+      line.innerHTML = log.txt + "<br>"; term.appendChild(line);
+    });
+    term.scrollTop = term.scrollHeight;
+  }
+
+  function toggleStart() { devices[activeTab].start = chkStart.checked; }
+  function toggleHold() { devices[activeTab].hold = chkHold.checked; if (!chkHold.checked && !isTerminalHidden) term.scrollTop = term.scrollHeight; }
+  function clearTerminal() { devices[activeTab].logs = []; term.innerHTML = ''; }
+
+  function switchTab(key) {
+    if (!devices[key]) return;
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active-tab'));
+    document.getElementById('btn-tab-' + key).classList.add('active-tab');
+    activeTab = key; const dev = devices[key];
+
+    wsUrlDisplay.innerText = `ws://${dev.ip}:${dev.port}`;
+    headerNameDisplay.innerText = dev.name; // Dynamiczna aktualizacja nazwy z obiektu devices
+    
+    // Zabezpieczenie przed niewłaściwym wyświetlaniem globalnych elementów, jeśli wyjdziemy z wykresu na inną kartę
+    const testWidget = document.getElementById('card-test-widget');
+    const fsButton = document.getElementById('btn-fullscreen');
+    if (testWidget) testWidget.style.display = 'flex';
+    if (fsButton) fsButton.style.display = 'flex';
+
+    chkStart.checked = dev.start; chkHold.checked = dev.hold;
+    isChartVisible = false;
+
+    pompaPanelBody.style.display = 'none'; jacuzziPanelBody.style.display = 'none';
+    siecPanelBody.style.display = 'none'; coPanelBody.style.display = 'none';
+    kotyPanelBody.style.display = 'none'; licznikPanelBody.style.display = 'none';
+    chartPanelBody.style.display = 'none'; emptyPanelBody.style.display = 'none';
+	document.getElementById('env-chart-panel-body').style.display = 'none';
+
+    if (key === 'P') pompaPanelBody.style.display = 'flex';
+    else if (key === 'J') { jacuzziPanelBody.style.display = 'flex'; updateJacuzziUI(); }
+    else if (key === 'S') { siecPanelBody.style.display = 'flex'; updateSiecUI(); }
+    else if (key === 'C') { coPanelBody.style.display = 'flex'; updateCoSalonUI(); }
+    else if (key === 'K') { kotyPanelBody.style.display = 'flex'; updateKotyUI(); }
+    else if (key === 'L') licznikPanelBody.style.display = 'flex';
+    else emptyPanelBody.style.display = 'flex';
+
+    if(!isTerminalHidden) renderTerminal();
+  }
+
+function startHardWatchdog(key) {
+    const dev = devices[key];
+    if (dev.hardResetTimer) clearTimeout(dev.hardResetTimer);
+    dev.hardResetTimer = setTimeout(() => {
+      printToDevice(key, "Brak komunikacji (Zombie). Wymuszam restart...", "info");
+      addSystemLog('warn', `[${key}] Brak komunikacji (Zombie) - Wymuszony restart.`);
+      if (dev.socket) { 
+        dev.socket.onopen = null;
+        dev.socket.onmessage = null;
+        dev.socket.onclose = null; 
+        dev.socket.onerror = null; 
+        dev.socket.close(); 
+      }
+      connectDevice(key);
+    }, 12000);
+  }
+
+  function registerActivity(key) {
+    const dev = devices[key]; updateV0State(key, 1);
+    if (dev.watchdogTimer) clearTimeout(dev.watchdogTimer);
+    dev.watchdogTimer = setTimeout(() => { updateV0State(key, 0); }, 5500);
+    startHardWatchdog(key);
+  }
+
+function updateV0State(key, val) {
+    const btn = document.getElementById('btn-tab-' + key);
+    const dev = devices[key];
+    if (!btn) return;
+    btn.classList.remove('v0-dark', 'v0-light', 'v0-disabled');
+    if (!dev.enabled) {
+       btn.classList.add('v0-disabled');
+    } else if (val === "1" || val === 1) { 
+       btn.classList.add('v0-light'); 
+    } else { 
+       btn.classList.add('v0-dark'); 
+    }
+  }
+
+  function updateLedState(state) {
+    led.classList.remove('off', 'state-on', 'state-off');
+    if (state === 'ON') { led.classList.add('state-on'); ledStatusText.innerText = "WŁĄCZONA"; ledStatusText.style.color = "var(--term-green)"; }
+    else if (state === 'OFF') { led.classList.add('state-off'); ledStatusText.innerText = "WYŁĄCZONA"; ledStatusText.style.color = "var(--term-red)"; }
+    else { led.classList.add('off'); ledStatusText.innerText = "STAN: NIEZNANY"; ledStatusText.style.color = "#888"; }
+  }
+
+  /* Logika Karty JACUZZI (Karta J) */
+  function handleJacuzziClick(btnKey) {
+    const btn = jacuzziButtons[btnKey];
+    if (!btn) return;
+
+    if (btnKey === 'garaz') { // Wyjątek Garażu - bezpośrednio do P
+      if (btn.state === 'OFF') {
+        btn.state = 'ON';
+        sendPayloadKey('P', '{"V9":"5506385"}');
+      } else {
+        btn.state = 'OFF';
+        sendPayloadKey('P', '{"V9":"5506388"}');
+      }
+    } else {
+      if (btn.state === 'OFF' || btn.state === 'PENDING_OFF') {
+        btn.state = 'PENDING_ON';
+        if (btn.onV) sendPayloadKey('J', `{"${btn.onV}":"1"}`);
+      } else if (btn.state === 'ON' || btn.state === 'PENDING_ON') {
+        btn.state = 'PENDING_OFF';
+        if (btn.offV) sendPayloadKey('J', `{"${btn.offV}":"1"}`);
+      }
+    }
+    updateJacuzziUI();
+  }
+
+  function handleSubJacuzziAction(type, action) {
+    if (type === 'woda') {
+      jacuzziCodes.wodaState = action;
+      if (action === 'ON' && jacuzziCodes.won) sendPayloadKey('J', `{"V9":"${jacuzziCodes.won}"}`);
+      else if (action === 'OFF' && jacuzziCodes.woff) sendPayloadKey('J', `{"V9":"${jacuzziCodes.woff}"}`);
+      else printToDevice('J', `[J] Brak zapisanego kodu dla WODA ${action}! Wpisz w terminalu np. W${action === 'ON' ? 'ON' : 'OFF'} [kod]`, "info");
+    } else if (type === 'grzejnik') {
+      jacuzziCodes.grzState = action;
+      if (action === 'ON' && jacuzziCodes.gon) sendPayloadKey('J', `{"V9":"${jacuzziCodes.gon}"}`);
+      else if (action === 'OFF' && jacuzziCodes.goff) sendPayloadKey('J', `{"V9":"${jacuzziCodes.goff}"}`);
+      else printToDevice('J', `[J] Brak zapisanego kodu dla GRZEJNIK ${action}! Wpisz w terminalu np. G${action === 'ON' ? 'ON' : 'OFF'} [kod]`, "info");
+    }
+    saveJacuzziCodes();
+    updateJacuzziUI();
+  }
+  
+  // Sekwencyjne załączanie/wyłączanie 6 przycisków w Karcie Jacuzzi (ALL)
+  let jacuzziSeqTimer = null;
+  function handleJacuzziAllAction(action) {
+    const sequence = ['kdom', 'koty', 'gwiazda', 'garaz', 'jacuzzi', 'wolny'];
+    let idx = 0;
+
+    if (jacuzziSeqTimer) {
+      clearInterval(jacuzziSeqTimer);
+    }
+    
+    printToDevice('J', `[J] Rozpoczynam sekwencję ALL ${action}...`, 'info');
+
+    // Pierwszy guzik od razu
+    executeJacuzziItem(sequence[idx], action);
+    idx++;
+
+    jacuzziSeqTimer = setInterval(() => {
+      if (idx < sequence.length) {
+        executeJacuzziItem(sequence[idx], action);
+        idx++;
+      } else {
+        clearInterval(jacuzziSeqTimer);
+        jacuzziSeqTimer = null;
+        printToDevice('J', `[J] Sekwencja ALL ${action} zakończona.`, 'info');
+      }
+    }, 1000);
+  }
+
+  function executeJacuzziItem(btnKey, action) {
+    const btn = jacuzziButtons[btnKey];
+    if (!btn) return;
+
+    if (btnKey === 'garaz') {
+      if (action === 'ON') {
+        btn.state = 'ON';
+        sendPayloadKey('P', '{"V9":"5506385"}');
+      } else {
+        btn.state = 'OFF';
+        sendPayloadKey('P', '{"V9":"5506388"}');
+      }
+    } else {
+      if (action === 'ON') {
+        btn.state = 'PENDING_ON';
+        if (btn.onV) sendPayloadKey('J', `{"${btn.onV}":"1"}`);
+      } else {
+        btn.state = 'PENDING_OFF';
+        if (btn.offV) sendPayloadKey('J', `{"${btn.offV}":"1"}`);
+      }
+    }
+    updateJacuzziUI();
+  }
+
+  function updateJacuzziUI() {
+    Object.keys(jacuzziButtons).forEach(btnKey => {
+      const btn = jacuzziButtons[btnKey];
+      const el = document.getElementById(btn.id);
+      if (!el) return;
+
+      const spinner = el.querySelector('.j-spinner');
+      const inner = el.querySelector('.j-btn-inner');
+      el.classList.remove('j-state-off', 'j-state-pending-on', 'j-state-on', 'j-state-pending-off');
+
+      if (btn.state === 'PENDING_ON' || btn.state === 'PENDING_OFF') {
+        if (btn.state === 'PENDING_ON') el.classList.add('j-state-pending-on');
+        else el.classList.add('j-state-pending-off');
+        if (spinner) spinner.style.display = 'block';
+        if (inner) inner.style.opacity = '0.4';
+      } else if (btn.state === 'ON') {
+        el.classList.add('j-state-on');
+        if (spinner) spinner.style.display = 'none';
+        if (inner) inner.style.opacity = '1';
+      } else {
+        el.classList.add('j-state-off');
+        if (spinner) spinner.style.display = 'none';
+        if (inner) inner.style.opacity = '1';
+      }
+    });
+
+    const btnWodaOn  = document.getElementById('btn-woda-on');
+    const btnWodaOff = document.getElementById('btn-woda-off');
+    const btnGrzOn   = document.getElementById('btn-grz-on');
+    const btnGrzOff  = document.getElementById('btn-grz-off');
+
+    if (btnWodaOn && btnWodaOff) {
+      if (jacuzziCodes.wodaState === 'ON') {
+        btnWodaOn.className  = 'j-sub-btn j-sub-on-active';
+        btnWodaOff.className = 'j-sub-btn j-sub-off-inactive';
+      } else {
+        btnWodaOn.className  = 'j-sub-btn j-sub-on-inactive';
+        btnWodaOff.className = 'j-sub-btn j-sub-off-active';
+      }
+    }
+
+    if (btnGrzOn && btnGrzOff) {
+      if (jacuzziCodes.grzState === 'ON') {
+        btnGrzOn.className  = 'j-sub-btn j-sub-on-active';
+        btnGrzOff.className = 'j-sub-btn j-sub-off-inactive';
+      } else {
+        btnGrzOn.className  = 'j-sub-btn j-sub-on-inactive';
+        btnGrzOff.className = 'j-sub-btn j-sub-off-active';
+      }
+    }
+
+    const lblWoda = document.getElementById('lbl-code-woda');
+    const lblGrz  = document.getElementById('lbl-code-grz');
+    const activeWodaCode = (jacuzziCodes.wodaState === 'ON') ? jacuzziCodes.won : jacuzziCodes.woff;
+    const activeGrzCode  = (jacuzziCodes.grzState === 'ON') ? jacuzziCodes.gon : jacuzziCodes.goff;
+
+    if (lblWoda) lblWoda.innerText = activeWodaCode ? activeWodaCode : "Wpisz KOD";
+    if (lblGrz)  lblGrz.innerText  = activeGrzCode  ? activeGrzCode  : "Wpisz KOD";
+  }
+
+  /* Logika Karta SIEC (S) */
+ let siecSeqTimer = null;
+
+  function handleSiecAction(idx, action) {
+    const btn = progButtons[idx];
+    if (!btn) return;
+    if (action === 'ON' && !btn.onCode) return;
+    if (action === 'OFF' && !btn.offCode) return;
+    
+    btn.state = action;
+    const payloadCode = (action === 'ON') ? btn.onCode : btn.offCode;
+    const targetESP = btn.esp ? btn.esp.toUpperCase() : 'S'; 
+    
+    if (devices[targetESP]) {
+       sendPayloadKey(targetESP, `{"V9":"${payloadCode}"}`);
+    } else {
+       printToDevice(activeTab, `[BŁĄD] Nieznany kanał ESP (${targetESP}) przypisany do przycisku ${btn.opis}`, "info");
+    }
+    
+    saveSiecCodes();
+    updateSiecUI();
+  }
+
+  function handleSiecAllAction(action) {
+    // Odpalamy sekwencje tylko na pierwszych 4 przyciskach (prawa kolumna, stara logika)
+    const sequence = [0, 1, 2, 3];
+    let i = 0;
+
+    if (siecSeqTimer) {
+      clearInterval(siecSeqTimer);
+    }
+    
+    printToDevice('S', `[S] Rozpoczynam sekwencję ALL ${action}...`, 'info');
+
+    handleSiecAction(sequence[i], action);
+    i++;
+
+    siecSeqTimer = setInterval(() => {
+      if (i < sequence.length) {
+        handleSiecAction(sequence[i], action);
+        i++;
+      } else {
+        clearInterval(siecSeqTimer);
+        siecSeqTimer = null;
+        printToDevice('S', `[S] Sekwencja ALL ${action} zakończona.`, 'info');
+        updateSiecAllUI(action);
+      }
+    }, 1000);
+  }
+
+  function updateSiecAllUI(lastAction) {
+    const btnAllOn = document.getElementById('btn-sall-on');
+    const btnAllOff = document.getElementById('btn-sall-off');
+    
+    if (!btnAllOn || !btnAllOff) return;
+
+    if (lastAction === 'ON') {
+      btnAllOn.className = 's-sub-btn s-sub-on-active';
+      btnAllOff.className = 's-sub-btn s-sub-off-inactive';
+    } else {
+      btnAllOn.className = 's-sub-btn s-sub-on-inactive';
+      btnAllOff.className = 's-sub-btn s-sub-off-active';
+    }
+  }
+
+  function updateSiecUI() {
+    progButtons.forEach((btnObj, idx) => {
+      const btnOn = document.getElementById(`btn-prog${idx}-on`);
+      const btnOff = document.getElementById(`btn-prog${idx}-off`);
+      const lbl = document.getElementById(`lbl-prog${idx}`);
+      
+      if (lbl) lbl.innerText = btnObj.opis || `PD${idx}`;
+
+      if (btnOn && btnOff) {
+        if (!btnObj.onCode && !btnObj.offCode) {
+           btnOn.className = 's-sub-btn s-sub-disabled';
+           btnOff.className = 's-sub-btn s-sub-disabled';
+        } else if (btnObj.state === 'ON') {
+           btnOn.className = 's-sub-btn s-sub-on-active';
+           btnOff.className = 's-sub-btn s-sub-off-inactive';
+        } else {
+           btnOn.className = 's-sub-btn s-sub-on-inactive';
+           btnOff.className = 's-sub-btn s-sub-off-active';
+        }
+      }
+    });
+  }
+  // Przyciski TEST dla każdej karty
+
+
+
+
+  /* KARTA CO-SALON (Karta C) */
+  function setCoMode(mode) {
+    const devC = devices.C; devC.mode = mode;
+    saveCoSettings(); sendPayloadKey('C', `MODE ${mode}`); evaluateHysteresis();
+  }
+
+  function adjustCoThreshold(type, delta) {
+    const devC = devices.C;
+    if (type === 'lowDay') { devC.lowDay = Math.round((devC.lowDay + delta) * 10) / 10; sendPayloadKey('C', `{"LD":"${devC.lowDay.toFixed(1)}"}`); }
+    else if (type === 'highDay') { devC.highDay = Math.round((devC.highDay + delta) * 10) / 10; sendPayloadKey('C', `{"HD":"${devC.highDay.toFixed(1)}"}`); }
+    else if (type === 'lowNight') { devC.lowNight = Math.round((devC.lowNight + delta) * 10) / 10; sendPayloadKey('C', `{"LN":"${devC.lowNight.toFixed(1)}"}`); }
+    else if (type === 'highNight') { devC.highNight = Math.round((devC.highNight + delta) * 10) / 10; sendPayloadKey('C', `{"HN":"${devC.highNight.toFixed(1)}"}`); }
+    saveCoSettings(); evaluateHysteresis();
+  }
+
+  function sendHeatCommand(action) {
+    if (action === 'ON') sendPayloadKey('P', '{"V9":"4477265"}');
+    else if (action === 'OFF') sendPayloadKey('P', '{"V9":"4477268"}');
+  }
+
+  let heatRepeatTimer = null;
+
+  function triggerRepeatedHeatCommand(payload, actionName) {
+    if (heatRepeatTimer) { clearInterval(heatRepeatTimer); heatRepeatTimer = null; }
+    
+    // Funkcja pomocnicza wysyłająca kod 2 razy w odstępie 1s
+    const fireDoublePayload = () => {
+        sendPayloadKey('P', payload);
+        setTimeout(() => { sendPayloadKey('P', payload); }, 1000);
+    };
+
+    fireDoublePayload(); // Pierwsze uderzenie natychmiast
+    
+    // Zegar wysyłający kod co 1 minutę (60000 ms) w nieskończoność
+    heatRepeatTimer = setInterval(() => {
+      fireDoublePayload();
+    }, 60000);
+  }
+
+  function evaluateHysteresis() {
+    const devC = devices.C;
+    if (devC.v11 === null || isNaN(devC.v11)) return;
+    const temp = devC.v11;
+    const activeLow  = (devC.mode === 'DAY') ? devC.lowDay : devC.lowNight;
+    const activeHigh = (devC.mode === 'DAY') ? devC.highDay : devC.highNight;
+
+    let newState = devC.stState;
+    if (temp > activeHigh) {
+        newState = 'HIGH';
+    } else if (temp < activeLow) {
+        newState = 'LOW';
+    } else {
+        // W strefie komfortu - przerywamy pętlę grzania/chłodzenia
+        newState = 'COMFORT';
+    }
+
+    if (devC.stState !== newState) {
+        if (newState === 'HIGH') triggerRepeatedHeatCommand('{"V9":"4477268"}', 'GRZANIE OFF');
+        else if (newState === 'LOW') triggerRepeatedHeatCommand('{"V9":"4477265"}', 'GRZANIE ON');
+        else if (newState === 'COMFORT' && heatRepeatTimer) {
+             clearInterval(heatRepeatTimer);
+             heatRepeatTimer = null;
+        }
+    }
+    
+    devC.stState = newState; updateCoSalonUI();
+  }
+
+  function updateCoSalonUI() {
+    const devC = devices.C;
+    document.getElementById('val-co-low-day').innerText   = devC.lowDay.toFixed(1) + '°C';
+    document.getElementById('val-co-high-day').innerText  = devC.highDay.toFixed(1) + '°C';
+    document.getElementById('val-co-low-night').innerText = devC.lowNight.toFixed(1) + '°C';
+    document.getElementById('val-co-high-night').innerText= devC.highNight.toFixed(1) + '°C';
+    document.getElementById('sched-time-day').value   = devC.timeDay || "06:00";
+    document.getElementById('sched-time-night').value = devC.timeNight || "22:00";
+
+    const btnDzien    = document.getElementById('btn-co-dzien');
+    const btnNoc      = document.getElementById('btn-co-noc');
+    const boxLowDay   = document.getElementById('box-co-low-day');
+    const boxHighDay  = document.getElementById('box-co-high-day');
+    const boxLowNight = document.getElementById('box-co-low-night');
+    const boxHighNight= document.getElementById('box-co-high-night');
+
+    if (devC.mode === 'DAY') {
+      btnDzien.className = 'btn-co-mode active-mode'; btnNoc.className   = 'btn-co-mode inactive-mode';
+      boxLowDay.className   = 'val-box box-blue'; boxHighDay.className  = 'val-box box-orange';
+      boxLowNight.className = 'val-box box-gray'; boxHighNight.className= 'val-box box-gray';
+    } else {
+      btnDzien.className = 'btn-co-mode inactive-mode'; btnNoc.className   = 'btn-co-mode active-mode';
+      boxLowDay.className   = 'val-box box-gray'; boxHighDay.className  = 'val-box box-gray';
+      boxLowNight.className = 'val-box box-blue'; boxHighNight.className= 'val-box box-orange';
+    }
+
+    if (devC.v11 !== null) document.getElementById('val-co-V11').innerText = isNaN(devC.v11) ? devC.v11 : devC.v11.toFixed(1) + '°C';
+    if (devC.v12 !== null) {
+      const num12 = parseFloat(devC.v12);
+      document.getElementById('val-co-V12').innerText = isNaN(num12) ? devC.v12 : Math.round(num12) + '%';
+    }
+
+    const iconFlame = document.getElementById('st-icon-flame');
+    const iconSnow  = document.getElementById('st-icon-snow');
+    stIndicator.classList.remove('state-low', 'state-high');
+    if (devC.stState === 'HIGH') {
+      stIndicator.classList.add('state-high');
+      if (iconFlame) iconFlame.style.display = 'none';
+      if (iconSnow)  iconSnow.style.display  = 'block';
+    } else {
+      stIndicator.classList.add('state-low');
+      if (iconFlame) iconFlame.style.display = 'block';
+      if (iconSnow)  iconSnow.style.display  = 'none';
+    }
+  }
+
+  /* KARTA KOTY (Karta K) */
+  function setKotyMode(mode) {
+    const devK = devices.K; devK.mode = mode;
+    saveKotySettings(); sendPayloadKey('K', `MODE ${mode}`); evaluateKotyHysteresis();
+  }
+
+  function adjustKotyThreshold(type, delta) {
+    const devK = devices.K;
+    if (type === 'lowDay') { devK.lowDay = Math.round((devK.lowDay + delta) * 10) / 10; sendPayloadKey('K', `{"LD":"${devK.lowDay.toFixed(1)}"}`); }
+    else if (type === 'highDay') { devK.highDay = Math.round((devK.highDay + delta) * 10) / 10; sendPayloadKey('K', `{"HD":"${devK.highDay.toFixed(1)}"}`); }
+    else if (type === 'lowNight') { devK.lowNight = Math.round((devK.lowNight + delta) * 10) / 10; sendPayloadKey('K', `{"LN":"${devK.lowNight.toFixed(1)}"}`); }
+    else if (type === 'highNight') { devK.highNight = Math.round((devK.highNight + delta) * 10) / 10; sendPayloadKey('K', `{"HN":"${devK.highNight.toFixed(1)}"}`); }
+    saveKotySettings(); evaluateKotyHysteresis();
+  }
+
+  function sendKotyHeatCommand(action) {
+    const devK = devices.K;
+    if (!devK.grzOnCode || !devK.grzOffCode) {
+      printToDevice('K', '[K] Brak skonfigurowanych kodów grzania! Użyj komend KOON [kod] i KOOFF [kod]', 'info');
+      return;
+    }
+    if (action === 'ON') sendPayloadKey('K', `{"V9":"${devK.grzOnCode}"}`);
+    else if (action === 'OFF') sendPayloadKey('K', `{"V9":"${devK.grzOffCode}"}`);
+  }
+
+  let kotyHeatRepeatTimer = null;
+
+  function triggerRepeatedKotyHeatCommand(payload, actionName) {
+    if (kotyHeatRepeatTimer) { clearInterval(kotyHeatRepeatTimer); kotyHeatRepeatTimer = null; }
+    
+    const fireDoublePayloadKoty = () => {
+        sendPayloadKey('K', payload);
+        setTimeout(() => { sendPayloadKey('K', payload); }, 1000);
+    };
+
+    fireDoublePayloadKoty();
+    
+    kotyHeatRepeatTimer = setInterval(() => {
+      fireDoublePayloadKoty();
+    }, 60000);
+  }
+
+  function evaluateKotyHysteresis() {
+    const devK = devices.K;
+    if (devK.v11 === null || isNaN(devK.v11)) return;
+    const temp = devK.v11;
+    const activeLow  = (devK.mode === 'DAY') ? devK.lowDay : devK.lowNight;
+    const activeHigh = (devK.mode === 'DAY') ? devK.highDay : devK.highNight;
+
+    let newState = devK.stState;
+    if (temp > activeHigh) {
+        newState = 'HIGH';
+    } else if (temp < activeLow) {
+        newState = 'LOW';
+    } else {
+        newState = 'COMFORT';
+    }
+
+    if (devK.stState !== newState) {
+      if (newState === 'HIGH' && devK.grzOffCode) triggerRepeatedKotyHeatCommand(`{"V9":"${devK.grzOffCode}"}`, 'GRZANIE OFF');
+      else if (newState === 'LOW' && devK.grzOnCode) triggerRepeatedKotyHeatCommand(`{"V9":"${devK.grzOnCode}"}`, 'GRZANIE ON');
+      else if (newState === 'COMFORT' && kotyHeatRepeatTimer) {
+          clearInterval(kotyHeatRepeatTimer);
+          kotyHeatRepeatTimer = null;
+      }
+    }
+    
+    devK.stState = newState; updateKotyUI();
+  }
+
+  function updateKotyUI() {
+    const devK = devices.K;
+    document.getElementById('val-k-low-day').innerText   = devK.lowDay.toFixed(1) + '°C';
+    document.getElementById('val-k-high-day').innerText  = devK.highDay.toFixed(1) + '°C';
+    document.getElementById('val-k-low-night').innerText = devK.lowNight.toFixed(1) + '°C';
+    document.getElementById('val-k-high-night').innerText= devK.highNight.toFixed(1) + '°C';
+    document.getElementById('sched-k-time-day').value   = devK.timeDay || "08:00";
+    document.getElementById('sched-k-time-night').value = devK.timeNight || "20:00";
+
+    const btnDzien    = document.getElementById('btn-k-dzien');
+    const btnNoc      = document.getElementById('btn-k-noc');
+    const boxLowDay   = document.getElementById('box-k-low-day');
+    const boxHighDay  = document.getElementById('box-k-high-day');
+    const boxLowNight = document.getElementById('box-k-low-night');
+    const boxHighNight= document.getElementById('box-k-high-night');
+
+    if (devK.mode === 'DAY') {
+      btnDzien.className = 'btn-co-mode active-mode'; btnNoc.className   = 'btn-co-mode inactive-mode';
+      boxLowDay.className   = 'val-box box-blue'; boxHighDay.className  = 'val-box box-orange';
+      boxLowNight.className = 'val-box box-gray'; boxHighNight.className= 'val-box box-gray';
+    } else {
+      btnDzien.className = 'btn-co-mode inactive-mode'; btnNoc.className   = 'btn-co-mode active-mode';
+      boxLowDay.className   = 'val-box box-gray'; boxHighDay.className  = 'val-box box-gray';
+      boxLowNight.className = 'val-box box-blue'; boxHighNight.className= 'val-box box-orange';
+    }
+
+    if (devK.v11 !== null) document.getElementById('val-k-V11').innerText = isNaN(devK.v11) ? devK.v11 : devK.v11.toFixed(1) + '°C';
+    if (devK.v12 !== null) {
+      const num12 = parseFloat(devK.v12);
+      document.getElementById('val-k-V12').innerText = isNaN(num12) ? devK.v12 : Math.round(num12) + '%';
+    }
+
+    const iconFlame = document.getElementById('st-k-icon-flame');
+    const iconSnow  = document.getElementById('st-k-icon-snow');
+    const btnHeatOn = document.getElementById('btn-k-heat-on');
+    const btnHeatOff= document.getElementById('btn-k-heat-off');
+
+    stKIndicator.classList.remove('state-low', 'state-high', 'state-disabled');
+    
+    if (!devK.grzOnCode || !devK.grzOffCode) {
+      stKIndicator.classList.add('state-disabled');
+      if (iconFlame) iconFlame.style.display = 'block';
+      if (iconSnow)  iconSnow.style.display  = 'none';
+      if (btnHeatOn) btnHeatOn.className = 'btn-heat btn-heat-red btn-heat-disabled';
+      if (btnHeatOff) btnHeatOff.className = 'btn-heat btn-heat-blue btn-heat-disabled';
+    } else {
+      if (btnHeatOn) btnHeatOn.className = 'btn-heat btn-heat-red';
+      if (btnHeatOff) btnHeatOff.className = 'btn-heat btn-heat-blue';
+      
+      if (devK.stState === 'HIGH') {
+        stKIndicator.classList.add('state-high');
+        if (iconFlame) iconFlame.style.display = 'none';
+        if (iconSnow)  iconSnow.style.display  = 'block';
+      } else {
+        stKIndicator.classList.add('state-low');
+        if (iconFlame) iconFlame.style.display = 'block';
+        if (iconSnow)  iconSnow.style.display  = 'none';
+      }
+    }
+  }
+
+ function connectDevice(key) {
+    const dev = devices[key];
+    
+    // Eliminacja nakładających się pętli
+    if (dev.reconnectTimer) {
+      clearTimeout(dev.reconnectTimer);
+      dev.reconnectTimer = null;
+    }
+
+    // Wizualizacja stanu na starcie
+    updateV0State(key, 0);
+
+    // Ubijanie osieroconych połączeń "Zombie" zanim utworzymy nowe
+    if (dev.socket) {
+      dev.socket.onopen = null;
+      dev.socket.onmessage = null;
+      dev.socket.onclose = null;
+      dev.socket.onerror = null;
+      if (dev.socket.readyState === WebSocket.OPEN || dev.socket.readyState === WebSocket.CONNECTING) {
+        dev.socket.close();
+      }
+    }
+
+    // Blokada łączenia jeśli ESP jest odznaczone w SETUP
+    if (!dev.enabled) return;
+
+    const url = `ws://${dev.ip}:${dev.port}`;
+    printToDevice(key, "Łączenie z serwerem " + url + "...", "info");
+    dev.socket = new WebSocket(url);
+
+    dev.socket.onopen = () => {
+      printToDevice(key, "Połączony z ESP32-C3 (" + dev.name + ")", "info");
+      printToDevice(key, "────────────────────────────────────────────", "info");
+      startHardWatchdog(key);
+    };
+
+    dev.socket.onmessage = (e) => {
+      printToDevice(key, e.data, "received");
+      registerActivity(key);
+
+      try {
+        const data = JSON.parse(e.data);
+
+        if (key === 'P') {
+          if ('V11' in data) document.getElementById('val-V11').innerText = data.V11;
+          if ('V21' in data) {
+            const num21 = parseFloat(data.V21);
+            document.getElementById('val-V21').innerText = isNaN(num21) ? data.V21 : num21.toFixed(1) + '°C';
+            if (!isNaN(num21)) updateTrend('trend-p-V21', num21);
+          }
+        if ('V22' in data) {
+            const num22 = parseFloat(data.V22);
+            document.getElementById('val-V22').innerText = isNaN(num22) ? data.V22 : Math.round(num22);
+            if (!isNaN(num22)) { updateTrend('trend-p-V22', num22); currentEnv.p = num22; }
+          }
+          if ('V26' in data) updateAQIDisplay('V26', data.V26);
+          if ('V27' in data) updateAQIDisplay('V27', data.V27);
+        }
+
+        if (key === 'S') {
+          // ODEBRANIE V11 z ESP SIEC I WYSŁANIE DO ESP POMPA
+          if ('V11' in data) {
+            updateSiecVal('V11', data.V11);
+            sendPayloadKey('P', `{"V14":"${data.V11}"}`); 
+            currentEnv.t = parseFloat(data.V11);
+          }
+          if ('V12' in data) updateSiecVal('V12', data.V12);
+        }
+
+        if (key === 'J') {
+          Object.keys(jacuzziButtons).forEach(btnKey => {
+            const btn = jacuzziButtons[btnKey];
+            if (!btn.isGarage && btn.fbV && (btn.fbV in data)) {
+              const val = String(data[btn.fbV]);
+              if (val === "1") btn.state = 'ON';
+              else if (val === "0") btn.state = 'OFF';
+            }
+          });
+          updateJacuzziUI();
+        }
+
+        if (key === 'C') {
+          if ('V11' in data) {
+            const num11 = parseFloat(data.V11); dev.v11 = num11;
+            evaluateHysteresis();
+            if (!isNaN(num11)) updateTrend('trend-co-V11', num11);
+          }
+          if ('V12' in data) {
+            dev.v12 = data.V12; const num12 = parseFloat(data.V12);
+            document.getElementById('val-co-V12').innerText = isNaN(num12) ? data.V12 : Math.round(num12) + '%';
+          }
+        }
+        
+        if (key === 'K') {
+          if ('V11' in data) {
+            const num11 = parseFloat(data.V11); dev.v11 = num11;
+            evaluateKotyHysteresis();
+            if (!isNaN(num11)) updateTrend('trend-k-V11', num11);
+          }
+          if ('V12' in data) {
+            dev.v12 = data.V12; const num12 = parseFloat(data.V12);
+            document.getElementById('val-k-V12').innerText = isNaN(num12) ? data.V12 : Math.round(num12) + '%';
+          }
+        }
+
+        if (key === 'L') {
+          if ('V10' in data) {
+            const raw10 = parseFloat(data.V10);
+            if (!isNaN(raw10)) {
+              const val2 = Math.round(raw10 * 2);
+              document.getElementById('val-l-V10').innerText = val2 + ' W';
+              if (dev.isRecording) {
+                const nowStr = new Date().toTimeString().split(' ')[0];
+                pushNewV10(val2, nowStr);
+              }
+            } else { document.getElementById('val-l-V10').innerText = data.V10; }
+          }
+          if ('V11' in data) { const raw11 = parseFloat(data.V11); document.getElementById('val-l-V11').innerText = !isNaN(raw11) ? (raw11 * 2).toFixed(2) + ' kWh' : data.V11; }
+          if ('V12' in data) document.getElementById('val-l-V12').innerText = data.V12;
+          if ('V13' in data) { const raw13 = parseFloat(data.V13); document.getElementById('val-l-V13').innerText = !isNaN(raw13) ? (raw13 * 2).toFixed(2) + ' kWh' : data.V13; }
+          if ('V14' in data) { const raw14 = parseFloat(data.V14); document.getElementById('val-l-V14').innerText = !isNaN(raw14) ? Math.round(raw14 * 2) + ' W' : data.V14; }
+          if ('V15' in data) { const raw15 = parseFloat(data.V15); document.getElementById('val-l-V15').innerText = !isNaN(raw15) ? Math.round(raw15 * 2) + ' W' : data.V15; }
+          if ('V16' in data) document.getElementById('val-l-V16').innerText = data.V16;
+        }
+      } catch (err) {}
+    };
+
+    dev.socket.onclose = () => {
+      updateV0State(key, 0);
+      if (dev.hardResetTimer) clearTimeout(dev.hardResetTimer);
+      printToDevice(key, "Rozłączono – próbuję ponownie za 5 s...", "info");
+      
+      // Rejestrujemy zdarzenie krytyczne do modala LOGI
+      addSystemLog('err', `[${key}] Utracono połączenie z urządzeniem.`);
+      
+      // Przypisanie wywołania do zmiennej zabezpiecza nas przed nakładaniem asynchronicznym
+      dev.reconnectTimer = setTimeout(() => connectDevice(key), 5000);
+    };
+
+    dev.socket.onerror = () => {
+      updateV0State(key, 0); 
+      printToDevice(key, "Błąd połączenia!", "info");
+      
+      // Rejestrujemy błąd gniazda do modala LOGI
+      addSystemLog('err', `[${key}] Błąd gniazda WebSocket.`);
+    };
+  }
+  function sendPayloadKey(key, payload) {
+    const dev = devices[key];
+    if (dev.socket && dev.socket.readyState === WebSocket.OPEN) {
+      dev.socket.send(payload); printToDevice(key, payload, "sent");
+    } else {
+      printToDevice(key, "!!! Brak połączenia z serwerem!", "info");
+    }
+  }
+
+  function sendPayload(rawInput) {
+    let wyslano = rawInput;
+    if (rawInput === ">1") wyslano = '{"V15":"1"}';
+    else if (rawInput === ">0") wyslano = '{"V15":"0"}';
+    sendPayloadKey(activeTab, wyslano);
+  }
+
+  function handleQuickCommand(cmd) {
+    if (activeTab === 'P') {
+      if (cmd === '>1') updateLedState('ON');
+      else if (cmd === '>0') updateLedState('OFF');
+    }
+    sendPayload(cmd);
+  }
+
+  // Obsługa przycisku RESET (Karta L)
+  const btnResetL = document.getElementById('btn-reset-l');
+  let isResetPressed = false;
+
+  function pressReset(e) {
+    if (e) e.preventDefault();
+    if (!isResetPressed) { isResetPressed = true; btnResetL.classList.add('pressed'); sendPayloadKey('L', '{"V16":"1"}'); }
+  }
+
+  function releaseReset(e) {
+    if (e) e.preventDefault();
+    if (isResetPressed) { isResetPressed = false; btnResetL.classList.remove('pressed'); sendPayloadKey('L', '{"V16":"0"}'); }
+  }
+
+  btnResetL.addEventListener('mousedown', pressReset); btnResetL.addEventListener('mouseup', releaseReset);
+  btnResetL.addEventListener('mouseleave', releaseReset); btnResetL.addEventListener('touchstart', pressReset, { passive: false });
+  btnResetL.addEventListener('touchend', releaseReset, { passive: false }); btnResetL.addEventListener('touchcancel', releaseReset, { passive: false });
+
+// ==========================================
+  // LOGIKA WYKRESU I REJESTRATORA (ENV: T & P)
+  // ==========================================
+  let envHistory = [];
+  let currentEnv = { t: null, p: null };
+  let envChartRange = '1D'; // '1D' lub '7D'
+  let envHoverIdx = -1;
+  const envCanvas = document.getElementById('envChart');
+  const envCtx = envCanvas ? envCanvas.getContext('2d') : null;
+
+  function startEnvLogging() {
+    // Odczyt z localStorage przy starcie
+    const savedEnv = localStorage.getItem('env_history_data');
+    if (savedEnv) { try { envHistory = JSON.parse(savedEnv); } catch(e){} }
+
+    // Rejestracja co 10 minut
+    setInterval(() => {
+      if (currentEnv.t !== null || currentEnv.p !== null) {
+        const now = new Date().getTime();
+        envHistory.push({ ts: now, t: currentEnv.t, p: currentEnv.p });
+        
+        // Kasowanie danych starszych niż 7 dni
+        const cutoff = now - 604800000;
+        envHistory = envHistory.filter(item => item.ts >= cutoff);
+        localStorage.setItem('env_history_data', JSON.stringify(envHistory));
+        
+        if (document.getElementById('env-chart-panel-body').style.display !== 'none') drawEnvChart();
+      }
+    }, 600000);
+  }
+
+  function showEnvChart() {
+    const pPanel = document.getElementById('pompa-panel-body');
+    if(pPanel) pPanel.style.display = 'none';
+    document.getElementById('env-chart-panel-body').style.display = 'flex';
+    
+    const testWidget = document.getElementById('card-test-widget');
+    const fsButton = document.getElementById('btn-fullscreen');
+    if (testWidget) testWidget.style.display = 'none';
+    if (fsButton) fsButton.style.display = 'none';
+    setTimeout(resizeEnvCanvas, 50);
+  }
+
+  function hideEnvChart() {
+    document.getElementById('env-chart-panel-body').style.display = 'none';
+    const pPanel = document.getElementById('pompa-panel-body');
+    if(pPanel) pPanel.style.display = 'flex';
+    
+    const testWidget = document.getElementById('card-test-widget');
+    const fsButton = document.getElementById('btn-fullscreen');
+    if (testWidget) testWidget.style.display = 'flex';
+    if (fsButton) fsButton.style.display = 'flex';
+  }
+
+  function setEnvRange(range) {
+    envChartRange = range;
+    document.getElementById('btn-env-1d').classList.remove('active');
+    document.getElementById('btn-env-7d').classList.remove('active');
+    if (range === '1D') document.getElementById('btn-env-1d').classList.add('active');
+    else document.getElementById('btn-env-7d').classList.add('active');
+    drawEnvChart();
+  }
+
+  function resizeEnvCanvas() {
+    if (document.getElementById('env-chart-panel-body').style.display === 'none') return;
+    const parent = envCanvas.parentElement;
+    if (!parent) return;
+    envCanvas.width = parent.clientWidth;
+    envCanvas.height = parent.clientHeight;
+    drawEnvChart();
+  }
+
+  function drawEnvChart() {
+    if (!envCtx || document.getElementById('env-chart-panel-body').style.display === 'none') return;
+    const w = envCanvas.width; const h = envCanvas.height;
+    if (w === 0 || h === 0) return;
+
+    const paddingLeft = 40; const paddingRight = 45; const paddingBottom = 30; const paddingTop = 20;
+    const chartW = w - paddingLeft - paddingRight; 
+    const chartH = h - paddingBottom - paddingTop;
+    envCtx.clearRect(0, 0, w, h);
+
+    const now = new Date().getTime();
+    const cutoff = now - (envChartRange === '1D' ? 86400000 : 604800000);
+    const data = envHistory.filter(d => d.ts >= cutoff);
+
+    if (data.length === 0) {
+      envCtx.fillStyle = '#888'; envCtx.font = '14px Arial';
+      envCtx.fillText("Trwa zbieranie danych...", w/2 - 70, h/2);
+      return;
+    }
+
+    const tVals = data.map(d => d.t).filter(v => v !== null && !isNaN(v));
+    const pVals = data.map(d => d.p).filter(v => v !== null && !isNaN(v));
+    
+    let tMin = tVals.length ? Math.floor(Math.min(...tVals)) - 1 : 0;
+    let tMax = tVals.length ? Math.ceil(Math.max(...tVals)) + 1 : 40;
+    if (tMin === tMax) { tMin -= 5; tMax += 5; }
+
+    const pMin = 960; const pMax = 1050; // Sztywne osie dla hPa
+
+    document.getElementById('env-stat-tmin').innerText = tVals.length ? Math.min(...tVals).toFixed(1) : '--';
+    document.getElementById('env-stat-tmax').innerText = tVals.length ? Math.max(...tVals).toFixed(1) : '--';
+    document.getElementById('env-stat-pmin').innerText = pVals.length ? Math.min(...pVals).toFixed(0) : '--';
+    document.getElementById('env-stat-pmax').innerText = pVals.length ? Math.max(...pVals).toFixed(0) : '--';
+
+    envCtx.strokeStyle = '#1e1e1e'; envCtx.lineWidth = 1; envCtx.font = '11px Arial';
+    const gridLines = 5;
+    for (let i = 0; i <= gridLines; i++) {
+      const yPos = h - paddingBottom - (i / gridLines) * chartH;
+      envCtx.beginPath(); envCtx.moveTo(paddingLeft, yPos); envCtx.lineTo(w - paddingRight, yPos); envCtx.stroke();
+      
+      envCtx.fillStyle = '#00ffff';
+      const tVal = tMin + (tMax - tMin) * (i / gridLines);
+      envCtx.fillText(`${tVal.toFixed(1)}`, 5, yPos + 4);
+
+      envCtx.fillStyle = '#ffaa00';
+      const pVal = pMin + (pMax - pMin) * (i / gridLines);
+      envCtx.fillText(`${Math.round(pVal)}`, w - paddingRight + 5, yPos + 4);
+    }
+
+    const drawLine = (key, min, max, color) => {
+      envCtx.beginPath(); envCtx.strokeStyle = color; envCtx.lineWidth = 2;
+      let first = true;
+      data.forEach((item, idx) => {
+        if (item[key] === null || isNaN(item[key])) return;
+        const x = paddingLeft + (idx / Math.max(1, data.length - 1)) * chartW;
+        const y = h - paddingBottom - ((item[key] - min) / (max - min)) * chartH;
+        if (first) { envCtx.moveTo(x, y); first = false; }
+        else envCtx.lineTo(x, y);
+      });
+      envCtx.stroke();
+    };
+
+    drawLine('t', tMin, tMax, '#00ffff');
+    drawLine('p', pMin, pMax, '#ffaa00');
+
+    if (envHoverIdx >= 0 && envHoverIdx < data.length) {
+      const item = data[envHoverIdx];
+      const hX = paddingLeft + (envHoverIdx / Math.max(1, data.length - 1)) * chartW;
+      
+      envCtx.beginPath(); envCtx.setLineDash([4, 4]); envCtx.strokeStyle = '#fff'; envCtx.lineWidth = 1;
+      envCtx.moveTo(hX, paddingTop); envCtx.lineTo(hX, h - paddingBottom); envCtx.stroke(); envCtx.setLineDash([]);
+
+      if (item.t !== null) {
+        const hYt = h - paddingBottom - ((item.t - tMin) / (tMax - tMin)) * chartH;
+        envCtx.beginPath(); envCtx.arc(hX, hYt, 5, 0, Math.PI*2); envCtx.fillStyle = '#00ffff'; envCtx.fill();
+      }
+      if (item.p !== null) {
+        const hYp = h - paddingBottom - ((item.p - pMin) / (pMax - pMin)) * chartH;
+        envCtx.beginPath(); envCtx.arc(hX, hYp, 5, 0, Math.PI*2); envCtx.fillStyle = '#ffaa00'; envCtx.fill();
+      }
+
+      const d = new Date(item.ts);
+      const timeStr = String(d.getDate()).padStart(2,'0') + "." + String(d.getMonth()+1).padStart(2,'0') + " " + String(d.getHours()).padStart(2,'0') + ":" + String(d.getMinutes()).padStart(2,'0');
+      document.getElementById('env-cursor-t').innerText = item.t !== null ? item.t.toFixed(1) + ' °C' : '-- °C';
+      document.getElementById('env-cursor-p').innerText = item.p !== null ? Math.round(item.p) + ' hPa' : '-- hPa';
+      document.getElementById('env-cursor-time').innerText = timeStr;
+    } else {
+      document.getElementById('env-cursor-t').innerText = '-- °C';
+      document.getElementById('env-cursor-p').innerText = '-- hPa';
+      document.getElementById('env-cursor-time').innerText = '--:--';
+    }
+  }
+
+  if (envCanvas) {
+    function handleEnvCanvasPointer(e) {
+      if (document.getElementById('env-chart-panel-body').style.display === 'none') return;
+      const rect = envCanvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const x = clientX - rect.left;
+      const paddingLeft = 40; const paddingRight = 45;
+      const chartW = envCanvas.width - paddingLeft - paddingRight;
+
+      const now = new Date().getTime();
+      const cutoff = now - (envChartRange === '1D' ? 86400000 : 604800000);
+      const data = envHistory.filter(d => d.ts >= cutoff);
+
+      if (x < paddingLeft || x > envCanvas.width - paddingRight || data.length === 0) {
+        envHoverIdx = -1;
+      } else {
+        const relX = x - paddingLeft;
+        envHoverIdx = Math.round((relX / chartW) * (data.length - 1));
+        envHoverIdx = Math.max(0, Math.min(data.length - 1, envHoverIdx));
+      }
+      drawEnvChart();
+    }
+    envCanvas.addEventListener('mousemove', handleEnvCanvasPointer);
+    envCanvas.addEventListener('click', handleEnvCanvasPointer);
+    envCanvas.addEventListener('touchstart', (e) => { handleEnvCanvasPointer(e); }, { passive: true });
+    envCanvas.addEventListener('touchmove', (e) => { handleEnvCanvasPointer(e); }, { passive: true });
+    envCanvas.addEventListener('mouseleave', () => { envHoverIdx = -1; drawEnvChart(); });
+  }
+  // Obsługa komend z terminala
+  input.addEventListener('keypress', (e) => {
+    if (e.key !== 'Enter') return;
+    let txt = input.value.trim();
+    if (txt === "") return;
+
+    const matchKoon = txt.match(/^KOON\s+(.+)$/i);
+    const matchKooff = txt.match(/^KOOFF\s+(.+)$/i);
+
+    if (matchKoon) {
+      devices.K.grzOnCode = matchKoon[1]; saveKotySettings(); updateKotyUI();
+      printToDevice('K', `[K] Zapisano kod włączenia grzania dla KOTÓW: ${matchKoon[1]}`, "info");
+      input.value = ""; return;
+    }
+
+    if (matchKooff) {
+      devices.K.grzOffCode = matchKooff[1]; saveKotySettings(); updateKotyUI();
+      printToDevice('K', `[K] Zapisano kod wyłączenia grzania dla KOTÓW: ${matchKooff[1]}`, "info");
+      input.value = ""; return;
+    }
+
+    const matchLowDay   = txt.match(/^LD\s+([0-9]+(\.[0-9]+)?)$/i);
+    const matchHighDay  = txt.match(/^HD\s+([0-9]+(\.[0-9]+)?)$/i);
+    const matchLowNight = txt.match(/^LN\s+([0-9]+(\.[0-9]+)?)$/i);
+    const matchHighNight= txt.match(/^HN\s+([0-9]+(\.[0-9]+)?)$/i);
+
+    if (matchLowDay || matchHighDay || matchLowNight || matchHighNight) {
+        if (activeTab === 'K') {
+             if (matchLowDay) { const val = parseFloat(matchLowDay[1]); devices.K.lowDay = val; saveKotySettings(); sendPayloadKey('K', `{"LD":"${val.toFixed(1)}"}`); evaluateKotyHysteresis(); }
+             else if (matchHighDay) { const val = parseFloat(matchHighDay[1]); devices.K.highDay = val; saveKotySettings(); sendPayloadKey('K', `{"HD":"${val.toFixed(1)}"}`); evaluateKotyHysteresis(); }
+             else if (matchLowNight) { const val = parseFloat(matchLowNight[1]); devices.K.lowNight = val; saveKotySettings(); sendPayloadKey('K', `{"LN":"${val.toFixed(1)}"}`); evaluateKotyHysteresis(); }
+             else if (matchHighNight) { const val = parseFloat(matchHighNight[1]); devices.K.highNight = val; saveKotySettings(); sendPayloadKey('K', `{"HN":"${val.toFixed(1)}"}`); evaluateKotyHysteresis(); }
+             input.value = ""; return;
+        } else if (activeTab === 'C' || activeTab !== 'K') { 
+            if (matchLowDay) { const val = parseFloat(matchLowDay[1]); devices.C.lowDay = val; saveCoSettings(); sendPayloadKey('C', `{"LD":"${val.toFixed(1)}"}`); evaluateHysteresis(); }
+            else if (matchHighDay) { const val = parseFloat(matchHighDay[1]); devices.C.highDay = val; saveCoSettings(); sendPayloadKey('C', `{"HD":"${val.toFixed(1)}"}`); evaluateHysteresis(); }
+            else if (matchLowNight) { const val = parseFloat(matchLowNight[1]); devices.C.lowNight = val; saveCoSettings(); sendPayloadKey('C', `{"LN":"${val.toFixed(1)}"}`); evaluateHysteresis(); }
+            else if (matchHighNight) { const val = parseFloat(matchHighNight[1]); devices.C.highNight = val; saveCoSettings(); sendPayloadKey('C', `{"HN":"${val.toFixed(1)}"}`); evaluateHysteresis(); }
+            input.value = ""; return;
+        }
+    }
+
+    sendPayload(txt);
+    input.value = "";
+  });
+
+  // Inicjalizacja po załadowaniu strony
+window.onload = () => {
+    loadSettings();
+    generateMockData();
+    startEnvLogging(); // DODANA FUNKCJA
+    Object.keys(devices).forEach(key => { connectDevice(key); });
+    switchTab('P');
+    updateJacuzziUI();
+    window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('resize', resizeEnvCanvas); // DODANY RESIZE
+  };
+</script>
+</body>
+</html>
